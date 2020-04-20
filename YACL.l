@@ -119,56 +119,66 @@ intcon      [1-9][0-9]*
 charcon     '([a-zA-Z]|[0-9]|\\n|\\0)'
 floatcon    [0-9]*\.?[0-9]?([eE][-+]?[0-9]+)?
 
+%s COMMENT
+%s COMMENT2
 %%
-{delim}           {;}
-while	            {return (WHILE);}
-for    	          {return (FOR);}
-int    	          {return (INT);}
-char    	        {return (CHAR);}
-float    	        {return (FLOAT);}
-void              {return (VOID);}
-if                {return (IF);}
-return            {return (RETURN);}
-break             {return (BREAK);}
-continue          {return (CONTINUE);}
 
-"<"	              {return LT; }
-"<="	            {return LE; }
-"=="	            {return EQ; }
-"!="	            {return NE; }
-">"	              {return GT; }
-">="	            {return GE; }
+<INITIAL>"/*"              {BEGIN COMMENT;}
+<COMMENT>"*/"              {BEGIN INITIAL;}
+<COMMENT>.|\n              {;}
+<INITIAL>"//"              {BEGIN COMMENT2;}
+<COMMENT2>\n               {BEGIN INITIAL;}
+<COMMENT2>.	               {;}
 
-"+"               {return PLUS; }
-"-"               {return MINUS; }
-"*"               {return MULTIPLY; }
-"/"               {return DIVIDE; }
+<INITIAL>{delim}           {;}
+<INITIAL>while	           {return (WHILE);}
+<INITIAL>for    	         {return (FOR);}
+<INITIAL>int    	         {return (INT);}
+<INITIAL>char    	         {return (CHAR);}
+<INITIAL>float    	       {return (FLOAT);}
+<INITIAL>void              {return (VOID);}
+<INITIAL>if                {return (IF);}
+<INITIAL>return            {return (RETURN);}
+<INITIAL>break             {return (BREAK);}
+<INITIAL>continue          {return (CONTINUE);}
 
-"="               {return ASSG; }
-"+="              {return PLUSASSG; }
-"-="              {return MINUSASSG; }
-"/="              {return DIVIDEASSG; }
-"*="              {return MULTIPLYASSG; }
+<INITIAL>"<"	             {return LT; }
+<INITIAL>"<="	             {return LE; }
+<INITIAL>"=="	             {return EQ; }
+<INITIAL>"!="	             {return NE; }
+<INITIAL>">"	             {return GT; }
+<INITIAL>">="	             {return GE; }
 
-"&&"              {return AND; }
-"||"              {return OR; }
-"++"              {return SELFPLUS; }
-"--"              {return SELFMINUS; }
+<INITIAL>"+"               {return PLUS; }
+<INITIAL>"-"               {return MINUS; }
+<INITIAL>"*"               {return MULTIPLY; }
+<INITIAL>"/"               {return DIVIDE; }
 
-"("               {return LP; }
-")"               {return RP; }
-"["               {return LB; }
-"]"               {return RB; }
-"{"               {return LA; }
-"}"               {return RA; }
-","               {return COMMA; }
-";"               {return SEMI; }
+<INITIAL>"="               {return ASSG; }
+<INITIAL>"+="              {return PLUSASSG; }
+<INITIAL>"-="              {return MINUSASSG; }
+<INITIAL>"/="              {return DIVIDEASSG; }
+<INITIAL>"*="              {return MULTIPLYASSG; }
 
-{id}	            {return (ID);}
-{intcon}	        {return (INTCON);}
-{charcon}         {return(CHARCON);}
-{floatcon}        {return(FLOATCON);}
-.                 {return(ERRORCHAR);}
+<INITIAL>"&&"              {return AND; }
+<INITIAL>"||"              {return OR; }
+<INITIAL>"++"              {return SELFPLUS; }
+<INITIAL>"--"              {return SELFMINUS; }
+
+<INITIAL>"("               {return LP; }
+<INITIAL>")"               {return RP; }
+<INITIAL>"["               {return LB; }
+<INITIAL>"]"               {return RB; }
+<INITIAL>"{"               {return LA; }
+<INITIAL>"}"               {return RA; }
+<INITIAL>","               {return COMMA; }
+<INITIAL>";"               {return SEMI; }
+
+<INITIAL>{id}	             {return (ID);}
+<INITIAL>{intcon}	         {return (INTCON);}
+<INITIAL>{charcon}         {return(CHARCON);}
+<INITIAL>{floatcon}        {return(FLOATCON);}
+<INITIAL>.                 {return(ERRORCHAR);}
 %%
 int yywrap (){
   return 1;
@@ -179,6 +189,6 @@ void print(int val,int value){
 int main (int argc, char ** argv){
     int a;
 	  while(a = yylex()){
-      print(a-1);
+      print(a-1,0);
     }
 }
