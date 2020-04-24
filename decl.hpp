@@ -20,9 +20,31 @@ using std::vector;
 		T_CHARARRAY,
 		T_VOID
     };
+	enum operations{
+		O_PLUS,
+		O_MINUS,
+		O_MULTIPLY,
+		O_DIVIDE,
+		O_EQ,
+		O_NEQ,
+		O_LE,
+		O_GE,
+		O_GT,
+		O_LT,
+		O_AND,
+		O_OR,
+		O_UMINUS,
+		O_UNOT,
+		O_SELFPLUS,
+		O_SELFMINUS
+	};
     const char* typenames[] = {
         "int","float","char","array of int","array of float","array of char"
     };
+	const char *opnames[] = {
+		"+","-","*","/","==","!=","<=",">=",">","<","&&","||","-","!","++","--"
+	};
+
 	inline string mytolower(string s) {
 		string ret;
 		for (auto c : s)
@@ -31,7 +53,7 @@ using std::vector;
 	}
 
 	inline void pl(int l) {
-		for (int i = 0; i < l * 2; i++)
+		for (int i = 0; i < l * 4; i++)
 			cout << ' ';
 	}
 
@@ -61,27 +83,26 @@ using std::vector;
 		vector<ast_node*> lst;
 		void print(int l) override {
 			pl(l);
-			cout << "ASTNode Type: Prog  Childs:\n";
+			cout << "ASTNode Type: Prog\n";
+			pl(l);
+			cout << "Childs:\n";
 			for (int i = 0; i < lst.size(); i++) {
 				lst[i]->print(l + 1);
 			}
 			cout << "\n";
 		}
 	};
-
-	//id, const,  break, continue
-	class ast_node_const : public ast_node {
+	enum ctrl{C_BREAK,C_CONTINUE} ;
+	const char *ctrlnames[] = {"Break","Continue"};
+	//break, continue
+	class ast_node_control : public ast_node {
 	public:
-        union{
-            float f;
-            int i;
-            char c;
-        } data;
+		ctrl ctrltype;
 		bool isarray = false;
 		ast_node *num;
 		void print(int l) override {
 			pl(l);
-			cout << "ASTNode Type: Const  " << "Token Information: ";
+			cout << "ASTNode Type: Control  " << "Token Information: " << ctrlnames[ctrltype];
 		}
 
 	};
@@ -96,6 +117,23 @@ using std::vector;
 				body[i]->print(l + 1);
 			}
 		}
+	};
+
+	
+	class ast_node_lvalue :public ast_node{
+	public:
+		string id;
+		vector<ast_node *> arrayind;
+		void print(int l) override {
+			pl(l);
+			if(arrayind.size() != 0){
+				cout << "ASTNode Type: Left Value ID: " << id << "Array dimensions: " << arrayind.size() << " Child Expressions: \n";
+				for(auto nodes : arrayind){
+				nodes->print(l+1);
+				}
+			}
+			else cout << "ASTNode Type: Left Value ID: " << id << endl;
+		}	
 	};
 
 	class ast_node_if : public ast_node {
@@ -213,11 +251,10 @@ using std::vector;
 			pl(l);
 			cout << "ASTNode Type: Function Call\n";
 			for (int i = 0; i < params.size(); i++) {
-				pl(l + 1);
+				pl(l);
 				cout << "Parameter " << i << " :\n";
 				params[i]->print(l + 1);
 			}
-			cout << "\n";
 		}
 
 	};
@@ -244,18 +281,23 @@ using std::vector;
 		vector<ast_node*> body;
 		void print(int l) override {
 			pl(l);
-			cout << "ASTNode Type: Function Define, id: " << id << " Returns: " << typenames[ret] << " Types: ";
+			cout << "ASTNode Type: Function Define, id: " << id << " Returns: " << typenames[ret] << " Types:";
 			if (parms.size() > 0) {
 				for (int i = 0; i < (parms.size() - 1); i++)
 					cout << typenames[parms[i].type] << ", ";
 				cout << typenames[parms[parms.size() - 1].type] << "  ";
+				cout << endl;
 			}
-			else cout << "None";
-			cout << "body:\n";
-			if (body.size() > 0) {
-				for (int i = 0; i < body.size(); i++)
-					body[i]->print(l + 1);
+			else cout << "None\n";
+			if(!body.empty()){
+				pl(l);
+				cout << "Body:\n";
+				if (body.size() > 0) {
+					for (int i = 0; i < body.size(); i++)
+						body[i]->print(l + 1);
+				}
 			}
+
 		}
 	};
 
@@ -266,20 +308,34 @@ using std::vector;
 		void print(int l) override {
 			pl(l);
 			cout << "ASTNode Type: Variable Declare, type: " << typenames[type]  << " id: ";
-				for (int i = 0; i < vars.size() - 1; i++)
-					cout << vars[i].ident << ", ";
+				for (int i = 0; i < vars.size() - 1; i++){
+					if(vars[i].isarray) cout << vars[i].ident << " [array], ";
+					else cout << vars[i].ident << ", ";
+				}
+					
 			cout << vars[vars.size() - 1].ident << "\n";
 		}
 	};
-
+	class ast_node_unary :public ast_node{
+	public:
+		ast_node *body;
+		operations op;
+		void print(int l) override {
+			pl(l);
+			cout << "ASTNode Type: Unary Operation, type:" << opnames[op] << "\n";
+			pl(l);
+			cout << "body:\n";
+			body->print(l + 1);
+		}
+	};
 	class ast_node_bin : public ast_node {
 	public:
-		types type;
+		operations op;
 		ast_node *left;
 		ast_node *right;
 		void print(int l) override {
 			pl(l);
-			cout << "ASTNode Type: Binary Operation, type:" << typenames[type] << "\n";
+			cout << "ASTNode Type: Binary Operation, type:" << opnames[op] << "\n";
 			pl(l);
 			cout <<	"left:\n";
 			left->print(l + 1);
@@ -299,17 +355,45 @@ using std::vector;
 		}
 
 	};
-
+	class ast_node_const :public ast_node{
+	public:
+		union datau{
+			float f;
+			int i;
+			char c;
+		} ;
+		datau data;
+		types type;
+		void print(int l) override{
+			pl(l);
+			cout << "ASTNode Type: Constant Literal, Type: " << typenames[type] << " Value :" ;
+			switch(type){
+				case T_INT: cout << data.i << endl;break;
+				case T_FLOAT: cout << data.f << endl;break;
+				case T_CHAR: cout << data.c << endl;break;
+			}
+		}
+	} ;
 	class ast_node_assg : public ast_node {
 	public:
-		string id;
 		bool isstmt = false;
 		bool isarray = false;
-		ast_node *num;
+		ast_node *left;
 		ast_node *right;
+		operations op;
 		void print(int l) override {
 			pl(l);
-			cout << "ASTNode Type: Assignment, id: " << id << " right:\n";
+			if(op == O_EQ){
+			cout << "ASTNode Type: Assignment\n";
+			}
+			else{
+				cout << "ASTNode Type: Compound Assignment, " << "Type: " << opnames[op] << endl;
+			}
+			pl(l);
+			cout << "left: \n" ;
+			left->print(l+1);
+			pl(l);
+			cout << "right: \n";
 			right->print(l + 1);
         }
 	};

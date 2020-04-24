@@ -1,3 +1,9 @@
+int function2(int b,int c,int d){
+    return (a++ - b+3)/4156+12545e2;
+}
 float function(int a,char b,float c){
-    int a;
+    int a,b,c,d;
+    a *= b = c ;//= d  = 5;
+    a = function2(function2(b,c,d),b,c,d);
+    int c,d[1],e,f;
 }
