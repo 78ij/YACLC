@@ -1,15 +1,10 @@
 %{
 #define YYDEBUG 1
-#include "decl.hpp"
+#include "decl.h"
 #include <iostream>
-#include <cstdio>
-#include<vector>
+#include <stdio.h>
 using std::cout;
 using std::endl;
-using std::cerr;
-using std::fopen;
-using std::fclose;
-using std::vector;
 void yyerror(const char *s);
 extern int yylex(void);
 extern int yylineno;
@@ -37,7 +32,7 @@ struct yt {
 %token<charcon>CHARCON
 %token<floatcon>FLOATCON
 %token<id>ID
-%token LT LE GE GT EQ NE PLUS MINUS MULTIPLY DIVIDE PLUSASSG MINUSASSG MULTIPLYASSG DIVIDEASSG NOT AND OR SELFMINUS SELFPLUS
+%token LT LE GE GT EQ NEQ PLUS MINUS MULTIPLY DIVIDE PLUSASSG MINUSASSG MULTIPLYASSG DIVIDEASSG NOT AND OR SELFMINUS SELFPLUS
 %token WHILE FOR BREAK CONTINUE RETURN IF INT FLOAT CHAR VOID LB RB LP RP LA RA COMMA SEMI ERROR
 %type<ast> prog dcl func stmt assg expr_left expr funcdcl vardcl
 %type<type> type
@@ -172,7 +167,7 @@ stmt:      	IF LP expr RP stmt ELSE stmt
               tmp->el = $7;
               $$ = tmp;
             }
-            | IF LP expr RP stmt
+            | IF LP expr RP stmt %prec NO_ELSE
             {
               ast_node_if *tmp = new ast_node_if();
               tmp->cond = $3;
@@ -503,29 +498,24 @@ expr:	       MINUS expr %prec UMINUS
  
 void yyerror(const char *s)	//当yacc遇到语法错误时，会回调yyerror函数，并且把错误信息放在参数s中
 {
-	cerr<<s << " at line " <<yylineno << " ,lookahead token is "<< yychar<< endl;//直接输出错误信息
-}
- 
-int main()//程序主函数，这个函数也可以放到其它.c, .cpp文件里
-
-
-{ 
-	const char* sFile="test.yacs";//打开要读取的文本文件
-	FILE* fp=fopen(sFile, "r");
-	if(fp==NULL)
-	{
-		cout << "cannot open " << sFile;
-		return -1;
-	}
-	extern FILE* yyin;	//yyin和yyout都是FILE*类型
-	yyin=fp;//yacc会从yyin读取输入，yyin默认是标准输入，这里改为磁盘文件。yacc默认向yyout输出，可修改yyout改变输出目的
- 
-	cout << "-----Begin Token Stream"  << sFile <<endl;;
-	yyparse();//使yacc开始读取输入和解析，它会调用lex的yylex()读取记号
-	cout << "-----End Token Stream" << endl;
-  
-	fclose(fp);
-  root->print(0);
-	return 0;
+	cout <<s << " at line " <<yylineno << " ,lookahead token is "<< yychar<< endl;//直接输出错误信息
 }
 
+void printtokenpair(int tokentype){
+  cout << "(" << yytname[tokentype-255] << ", ";
+  switch(tokentype){
+    case INTCON:
+      cout << yylval.intcon;
+      break;
+    case FLOATCON:
+      cout << yylval.floatcon;
+      break;
+    case CHARCON:
+      cout << yylval.charcon;
+      break;
+    case ID:
+      cout << yylval.id;
+      break;
+  }
+  cout << ") ";
+}

@@ -83,7 +83,7 @@ floatcon    [0-9]*\.?[0-9]?([eE][-+]?[0-9]+)?
 <INITIAL>"<"	             {return LT; }
 <INITIAL>"<="	             {return LE; }
 <INITIAL>"=="	             {return EQ; }
-<INITIAL>"!="	             {return NE; }
+<INITIAL>"!="	             {return NEQ; }
 <INITIAL>">"	             {return GT; }
 <INITIAL>">="	             {return GE; }
 
