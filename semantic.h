@@ -1,17 +1,43 @@
 #include <stack>
 #include <list>
-#include <decl.h>
+#include "decl.h"
 #include <string>
 #include <vector>
 using std::stack;
 using std::list;
 using std::string;
 using std::vector;
-struct symbleTableEntry{
+struct symbolTableEntry{
     string id;
     string alias;
-    int level;
     int offset;
     bool isfunc;
     parm_type type;
+    vector<parm_type> types; // Only for functions
 };
+struct symbolTable{
+    string scopeid;
+    int level;
+    bool isloop;
+    bool isfunc;
+    bool isvoid;
+    vector<symbolTableEntry> entrys;
+};
+
+void error(string s);
+
+class Semantic{
+public:
+    Semantic(ast_node *_root,bool print):
+        root(_root),printSymbolTable(print) {    };
+    int analysis();
+private:
+    bool printSymbolTable;
+    ast_node *root;
+    vector<symbolTable> tablestack;
+    parm_type analysisHelper(ast_node *root,int level);
+    void printTable(const symbolTable &t);
+    void print();
+    bool findintable(string id,symbolTableEntry &ret);
+};
+

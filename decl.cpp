@@ -70,20 +70,6 @@ void ast_node_if::print(int l) {
     pl(l);
     cout << "Body:\n";
     body->print(l + 1);
-    for (int i = 0; i < elif.size(); i++) {
-        pl(l);
-        cout << "Else IF, Condition:\n";
-        elifcond[i]->print(l + 1);
-        pl(l);
-        cout << " Body:\n";
-        
-        elif[i]->print(l + 1);
-    }
-    if (el != nullptr) {
-        pl(l);
-        cout << "Else:\n";
-        el->print(l + 1);
-    }
 }
 
 void ast_node_while::print(int l){

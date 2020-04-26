@@ -67,8 +67,6 @@ public:
 class ast_node_control : public ast_node {
 public:
 	ctrl ctrltype;
-	bool isarray = false;
-	ast_node *num;
 	void print(int l) override;
 };
 
@@ -90,8 +88,6 @@ class ast_node_if : public ast_node {
 public:
 	ast_node *cond;
 	ast_node *body;
-	vector<ast_node *>elif;
-	vector<ast_node *>elifcond;
 	ast_node *el;
 	void print(int l) override;
 

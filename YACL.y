@@ -116,7 +116,7 @@ type:	       CHAR {$$ = T_CHAR;}
  	          |	INT {$$ = T_INT;}
             | FLOAT {$$=T_FLOAT;}
 multidim:    LB RB multidim {$$ = $3; ($$.arraydim)++;}
-            | {$$.arraydim=0;};
+            | {$$ = parm_type();$$.arraydim=0;};
 parm_types: 	VOID {$$ = vector<parm_type>();}
  	          |	type ID multidim parmlist
             {
@@ -158,6 +158,7 @@ func:	      type ID LP parm_types RP LA funcbody RA
 exprlist:     COMMA expr exprlist{$3.insert($3.begin(),$2); $$ = $3;}
             | {$$ = vector<ast_node*>();};
 stmtlist:    stmt stmtlist {$2.insert($2.begin(),$1); $$ = $2;}
+            | vardcl stmtlist{$2.insert($2.begin(),$1);$$ = $2;}
             |{$$ = vector<ast_node*>();};
 stmt:      	IF LP expr RP stmt ELSE stmt
             {

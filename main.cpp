@@ -1,7 +1,8 @@
-#include <getopt.h>
+#include "getopt.h"
 #include <iostream>
 #include "decl.h"
 #include <cstdio>
+#include "semantic.h"
 #include <vector>
 using std::cout;
 using std::endl;
@@ -66,12 +67,14 @@ int main(int argc,char **argv){
     }
     fseek(yyin,0,0);
     yyparse();
+    fclose(fp);
     if(ast){
         cout << "----------------------------Begin AST---------------------------------------\n";
         root->print(0);
         cout << "----------------------------End AST-----------------------------------------\n";
     }
-	fclose(fp);
+    Semantic s(root,true);
+    s.analysis();
 	return 0;
 }
 
