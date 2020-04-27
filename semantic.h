@@ -12,6 +12,7 @@ struct symbolTableEntry{
     string alias;
     int offset;
     bool isfunc;
+    bool isproto;
     parm_type type;
     vector<parm_type> types; // Only for functions
 };
@@ -20,6 +21,7 @@ struct symbolTable{
     int level;
     bool isloop;
     bool isfunc;
+    bool hasret;
     bool isvoid;
     vector<symbolTableEntry> entrys;
 };

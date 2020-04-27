@@ -1,1 +1,9 @@
-int b[10],c,d;
+int main2(int a[]);
+int main(int a,int b){
+    int f[23][11],g,h;
+    for(a = 0;a <= 5;a = a + 1){
+        break;
+    }
+    main2(f[0]);
+
+}

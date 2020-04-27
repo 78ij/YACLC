@@ -12,12 +12,12 @@ using std::endl;
 using std::ostream;
 using std::vector;
 enum types{
+		T_CHAR,
         T_INT,
 		T_FLOAT,
-		T_CHAR,
+		T_CHARARRAY,
 		T_INTARRAY,
 		T_FLOATARRAY,
-		T_CHARARRAY,
 		T_VOID
 };
 enum operations{

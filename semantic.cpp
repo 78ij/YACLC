@@ -57,8 +57,8 @@ bool Semantic::findintable(string id,symbolTableEntry &ret){
             ret = *it;
             return true;
         }
-        else return false;
     }
+    return false;
 }
 
 int Semantic::analysis(){
@@ -71,6 +71,7 @@ int Semantic::analysis(){
     }
     return 0;
 }
+
 
 parm_type Semantic::analysisHelper(ast_node *root,int level){
     if(root == NULL) return parm_type();
@@ -124,12 +125,13 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
                 if(e.isfunc){
                     throw runtime_error("Function name " + lv->id + "used as left value.");
                 }
-                //check if array dimensions are coherent
-                if(e.type.arraydim != lv->arrayind.size()){
-                    throw runtime_error("Variable " + lv->id + "'s Array dimensions does not match.");
-                }
+				e.type.arraydim -= lv->arrayind.size();
+				for (int i = 0; i < e.type.arraydim; i++) e.type.arraysize[i] = e.type.arraysize[i + lv->arrayind.size()];
                 return e.type;
-            }
+			}
+			else {
+				throw runtime_error("Variable name " + lv->id + "not defined.");
+			}
         }
     }
     if(typeid(*root) == typeid(ast_node_if)){
@@ -149,6 +151,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         newscope.isloop = true;
         tablestack.push_back(newscope);
         analysisHelper(wi->body,level + 1);
+		if (printSymbolTable) print();
         tablestack.pop_back();
     }
     if(typeid(*root) == typeid(ast_node_for)){
@@ -164,6 +167,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         newscope.isloop = true;
         tablestack.push_back(newscope);
         analysisHelper(fo->body,level + 1);
+		if (printSymbolTable) print();
         tablestack.pop_back();
     }
     if(typeid(*root) == typeid(ast_node_ret)){
@@ -180,6 +184,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         else if((tablestack[i].isvoid && fo->stmt != NULL) ||
                 (!tablestack[i].isvoid && fo->stmt == NULL))
             throw runtime_error("Return statement does not match function return value.");
+        tablestack[i].hasret = true;
     }
     if(typeid(*root) == typeid(ast_node_callfunc)){
         //find function def in symbol table
@@ -187,7 +192,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         symbolTableEntry e;
         if(findintable(cf->id,e)){
             //check if type are coherent
-            if(e.isfunc){
+            if(!e.isfunc){
                 throw runtime_error("Variable name " + cf->id + "used as fucntion name.");
             }
             //check if parameters are coherent
@@ -221,6 +226,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         // Add it in current symbol table
         e.id = proto->id;
         e.isfunc = true;
+        e.isproto = true;
         e.type.type = proto->type;
         e.types = proto->parms;
         e.alias = "f_" + e.id + "_" + to_string(e.type.type);
@@ -229,9 +235,72 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         }
         tablestack[tablestack.size() - 1].entrys.push_back(e);
     }
+    if(typeid(*root) == typeid(ast_node_funcdef)){
+        // We encounter a function define
+        // First search this symbol
+        ast_node_funcdef *def = dynamic_cast<ast_node_funcdef *>(root);
+        symbolTableEntry e;
+        // If it exists, check if it is a proto
+        if(findintable(def->id,e)){
+            if(!e.isfunc || !e.isproto){
+                throw runtime_error("Redefinition of function " + def->id);
+            }
+            // check signature
+            if(def->parms.size() != e.types.size()){
+                throw runtime_error("Function def " + def->id + "'s parameter number not match its prototype.");
+            }
+            for(int i = 0;i < def->parms.size();i++){
+                //check every parameter's type and array dimensions
+                if(def->parms[i].type != e.types[i].type)
+                    throw runtime_error("Function def " + def->id + "'s parameter type not match its prototype.");
+                if(def->parms[i].arraydim != e.types[i].arraydim)
+                    throw runtime_error("Function def " + def->id + "'s parameter array dimension not match its prototype.");
+            }
+        }else{
+            symbolTableEntry e;
+            e.id = def->id;
+            e.isfunc = true;
+            e.type.type = def->ret;
+            e.types = def->parms;
+            e.isproto = false;
+            e.alias = "f_" + e.id + "_" + to_string(e.type.type);
+            for(auto i : e.types){
+                e.alias = e.alias + "_" + to_string(i.type);
+            }
+            tablestack[tablestack.size() - 1].entrys.push_back(e);
+        }
+
+        // We are now entering a new scope
+        // So create a new symbol table
+        symbolTable newscope;
+        newscope.scopeid = "Function Define:" + def->id;
+        newscope.level = level + 1;
+        newscope.isloop = false;
+        newscope.isfunc = true;
+        newscope.isvoid = def->ret == T_VOID? true : false;
+        tablestack.push_back(newscope);
+		// push back all the parameters into the symbol table
+		for (int i = 0; i < def->parms.size();i++) {
+			e.id = def->parms[i].ident;
+			e.type = def->parms[i];
+			e.isfunc = false;
+			e.isproto = false;
+			e.alias = "v_" + e.id;
+			tablestack[tablestack.size() - 1].entrys.push_back(e);
+		}
+        for(auto node : def->body){
+            analysisHelper(node,level + 1);
+        }
+        if(tablestack[tablestack.size() - 1].hasret == false && def->ret != T_VOID){
+            throw runtime_error("Function def " + def->id + " doesn't return void, but doesn't have a return statement.");
+        }
+        if(printSymbolTable) print();
+        tablestack.pop_back();
+    
+    }
 
     if(typeid(*root) == typeid(ast_node_vardec)){
-        // We encounter a(probable multiple)variable prototype
+        // We encounter a variable declaration
         ast_node_vardec *var = dynamic_cast<ast_node_vardec *>(root);
         symbolTableEntry e;
         for(auto v :var->vars){
@@ -240,9 +309,66 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
             e.type = v;
             e.type.type = var->type;
             e.isfunc = false;
+            e.isproto = true;
             e.alias = "v_" + v.ident;
             tablestack[tablestack.size() - 1].entrys.push_back(e);
         }
+    }
+
+    if(typeid(*root) == typeid(ast_node_unary)){
+        // We encounter an unary operation
+        ast_node_unary *u = dynamic_cast<ast_node_unary *>(root);
+        parm_type t = analysisHelper(u->body,level+1);
+		if(t.arraydim != 0 )
+			throw runtime_error("Array" + t.ident + "Used as left value.");
+        parm_type t2;
+        t2.type = T_INT;
+        if(u->op == O_UNOT) return t2;
+        else return t;
+    }
+    if(typeid(*root) == typeid(ast_node_bin)){
+        // We encounter a binary operation
+        ast_node_bin *bin = dynamic_cast<ast_node_bin *>(root);
+        parm_type t2;
+        t2.type = T_INT;
+        if(bin->op == O_EQ || bin->op==O_GE || bin->op==O_GT ||
+            bin->op == O_LE || bin->op == O_LT ||bin->op == O_NEQ){
+                return t2;
+        }
+        else{
+            parm_type l = analysisHelper(bin->left,level+1);
+			if (l.arraydim != 0)
+				throw runtime_error("Array" + l.ident + "Used as left value.");
+            parm_type r = analysisHelper(bin->right,level+1);
+			if (r.arraydim != 0)
+				throw runtime_error("Array" + r.ident + "Used as left value.");
+            types t = std::max(l.type,r.type);
+            l.type = t;
+			l.arraydim = 0;
+            return l;
+        }
+
+    }
+
+    if(typeid(*root) == typeid(ast_node_assg)){
+        // We encounter an assignment statement
+        ast_node_assg *assg = dynamic_cast<ast_node_assg *>(root);
+        if(typeid(*(assg->left)) != typeid(ast_node_lvalue))
+            throw runtime_error("The left part of assignment is not a left value");
+        parm_type t = analysisHelper(assg->left,level+1);
+		if (t.arraydim != 0)
+			throw runtime_error("Array" + t.ident + "Used as left value.");
+        analysisHelper(assg->right,level+1);
+        return t;
+    }
+
+    if(typeid(*root) == typeid(ast_node_const)){
+        // We encounter an assignment statement
+        ast_node_const *c = dynamic_cast<ast_node_const *>(root);
+        parm_type t;
+        t.type = c->type;
+		t.arraydim = 0;
+        return t;
     }
     return parm_type();
 }   

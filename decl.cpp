@@ -1,6 +1,6 @@
 #include "decl.h"
 const char* typenames[] = {
-    "int","float","char","array of int","array of float","array of char"
+    "char","int","float","array of char","array of int","array of float"
 };
 const char *opnames[] = {
 	"+","-","*","/","==","!=","<=",">=",">","<","&&","||","-","!","++","--"
@@ -129,9 +129,12 @@ void ast_node_callfunc::print(int l){
 void ast_node_funcdec::print(int l){
     pl(l);
     cout << "ASTNode Type: Function Declare, id: " << id << "Returns: " << typenames[type] << " Types: ";
-    for (int i = 0; i < parms.size() - 1; i++)
+    if(parms.size() != 0){
+        for (int i = 0; i < parms.size() - 1; i++)
         cout << typenames[parms[i].type] << ", ";
-    cout << typenames[parms[parms.size() - 1].type] << "\n";
+        cout << typenames[parms[parms.size() - 1].type] << "\n";
+    }
+    else cout << "\n";
 }
 
 void ast_node_funcdef::print(int l){

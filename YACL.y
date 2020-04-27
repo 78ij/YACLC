@@ -65,8 +65,8 @@ struct yt {
 prog:        dcl SEMI prog {root->lst.insert((root->lst).begin(),$1);}
             | func prog  {root->lst.insert((root->lst).begin(),$1);}
             | {root = new ast_node_prog();} ;
-dcl:	       funcdcl {$$ = $1;}
-            |	vardcl {$$ = $1;};
+dcl:	       funcdcl  {$$ = $1;}
+            |	vardcl  {$$ = $1;};
 funcdcl :     type ID LP parm_types RP 
               {
                 ast_node_funcdec *tmp = new ast_node_funcdec();
@@ -263,13 +263,13 @@ stmt:      	IF LP expr RP stmt ELSE stmt
               $$ = $1;
             }
             |	SEMI {}
-            | BREAK
+            | BREAK SEMI
             {
               ast_node_control *tmp = new ast_node_control();
               tmp->ctrltype = C_BREAK;
               $$ = tmp;
             }
-            | CONTINUE
+            | CONTINUE SEMI
              {
               ast_node_control *tmp = new ast_node_control();
               tmp->ctrltype = C_CONTINUE;
@@ -465,6 +465,7 @@ expr:	       MINUS expr %prec UMINUS
               ast_node_const *tmp = new ast_node_const();
               (tmp->data).i = $1;
               tmp->type = T_INT;
+              
               $$ = tmp;
             }
             |	CHARCON
@@ -472,6 +473,7 @@ expr:	       MINUS expr %prec UMINUS
               ast_node_const *tmp = new ast_node_const();
               (tmp->data).c = $1;
               tmp->type = T_CHAR;
+              
               $$ = tmp;
             }
             |	FLOATCON
@@ -479,6 +481,7 @@ expr:	       MINUS expr %prec UMINUS
               ast_node_const *tmp = new ast_node_const();
               (tmp->data).f = $1;
               tmp->type = T_FLOAT;
+              
               $$ = tmp;
             }
             | expr_left SELFPLUS
