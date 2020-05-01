@@ -1,9 +1,11 @@
-int main2(int a[]);
-int main(int a,int b){
-    int f[23][11],g,h;
-    for(a = 0;a <= 5;a = a + 1){
-        break;
-    }
-    main2(f[0]);
+int i,j;
+float m,n;
+float fun(int x,char y)
+{
+    int a[10][20];
+    a[5.3]=10;
+    for(i1=1;ii<10;i++)  i*++i1;
+    
+    return 1;
 
 }

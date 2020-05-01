@@ -142,8 +142,8 @@ void ast_node_funcdef::print(int l){
     cout << "ASTNode Type: Function Define, id: " << id << " Returns: " << typenames[ret] << " Types:";
     if (parms.size() > 0) {
         for (int i = 0; i < (parms.size() - 1); i++)
-            cout << typenames[parms[i].type] << ", ";
-        cout << typenames[parms[parms.size() - 1].type] << "  ";
+            cout << typenames[parms[i].type] << " " << parms[i].ident << ", ";
+        cout << typenames[parms[parms.size() - 1].type] << "  " << parms[parms.size() - 1].ident;
         cout << endl;
     }
     else cout << "None\n";
@@ -165,13 +165,17 @@ void ast_node_vardec::print(int l){
             if(vars[i].isarray) cout << vars[i].ident << " [array], ";
             else cout << vars[i].ident << ", ";
         }
-            
-    cout << vars[vars.size() - 1].ident << "\n";
+    if(vars[vars.size() - 1].isarray) 
+        cout << vars[vars.size() - 1].ident << " [array], " << endl;
+    else cout << vars[vars.size() - 1].ident << "\n";
 }
 
 void ast_node_unary::print(int l){
     pl(l);
-    cout << "ASTNode Type: Unary Operation, type:" << opnames[op] << "\n";
+    cout << "ASTNode Type: Unary Operation, type:" << opnames[op] << " ";
+    if(!isright) cout << "Prefix";
+    else cout << "Suffix"; 
+    cout << "\n";
     pl(l);
     cout << "body:\n";
     body->print(l + 1);

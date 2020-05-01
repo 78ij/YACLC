@@ -54,7 +54,7 @@ delim       [" " \t \n]*
 letter	    [A-Za-z_]
 digit       [0-9]
 id          [a-zA-Z]([a-zA-Z]|[0-9]|_)*
-intcon      [1-9][0-9]*
+intcon      0|([1-9][0-9]*)
 charcon     '([a-zA-Z]|[0-9]|\\n|\\0)'
 floatcon    [0-9]*\.?[0-9]?([eE][-+]?[0-9]+)?
 %s COMMENT
@@ -118,8 +118,17 @@ floatcon    [0-9]*\.?[0-9]?([eE][-+]?[0-9]+)?
 <INITIAL>{intcon}	         {yylval.intcon = std::atoi(yytext);return (INTCON); }
 <INITIAL>{charcon}         {yylval.charcon = yytext[0]; return(CHARCON);}
 <INITIAL>{floatcon}        {yylval.floatcon = atof(yytext); return(FLOATCON);}
-<INITIAL>.                 {cout << "ERROR\n"; return ERROR;}
+<INITIAL>.                 {cout << "line " << yylineno << ": Lexical Analysis ERROR\n";exit(0); return ERROR;}
 %%
 int yywrap (){
   return 1;
+}
+
+void eat_to_newline(void)
+{
+    int c;
+	c= getc(yyin);
+    while (c != EOF && c != '\n' && c != '\0')
+	c = getc(yyin)
+        ;
 }

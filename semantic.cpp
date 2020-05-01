@@ -45,7 +45,7 @@ void Semantic::print(){
     }
 }
 
-bool Semantic::findintable(string id,symbolTableEntry &ret){
+bool findintable(string id,symbolTableEntry &ret, vector<symbolTable> tablestack){
     for(int i = tablestack.size() - 1;i >= 0;i--){
         vector<symbolTableEntry>::iterator it = find_if(
             tablestack[i].entrys.begin(),
@@ -120,7 +120,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         ast_node_lvalue *lv = dynamic_cast<ast_node_lvalue *>(root);
         for(int i = tablestack.size() - 1;i >= 0;i--){
             symbolTableEntry e;
-            if(findintable(lv->id,e)){
+            if(findintable(lv->id,e,tablestack)){
                 //check if type are coherent
                 if(e.isfunc){
                     throw runtime_error("Function name " + lv->id + "used as left value.");
@@ -190,7 +190,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         //find function def in symbol table
         ast_node_callfunc *cf = dynamic_cast<ast_node_callfunc *>(root);
         symbolTableEntry e;
-        if(findintable(cf->id,e)){
+        if(findintable(cf->id,e,tablestack)){
             //check if type are coherent
             if(!e.isfunc){
                 throw runtime_error("Variable name " + cf->id + "used as fucntion name.");
@@ -222,7 +222,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         ast_node_funcdec *proto = dynamic_cast<ast_node_funcdec *>(root);
         symbolTableEntry e;
         // If it exists, emit a semantic error
-        if(findintable(proto->id,e)) throw runtime_error("Redefinition of symbol " + proto->id);
+        if(findintable(proto->id,e, tablestack)) throw runtime_error("Redefinition of symbol " + proto->id);
         // Add it in current symbol table
         e.id = proto->id;
         e.isfunc = true;
@@ -241,7 +241,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         ast_node_funcdef *def = dynamic_cast<ast_node_funcdef *>(root);
         symbolTableEntry e;
         // If it exists, check if it is a proto
-        if(findintable(def->id,e)){
+        if(findintable(def->id,e, tablestack)){
             if(!e.isfunc || !e.isproto){
                 throw runtime_error("Redefinition of function " + def->id);
             }
@@ -304,7 +304,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         ast_node_vardec *var = dynamic_cast<ast_node_vardec *>(root);
         symbolTableEntry e;
         for(auto v :var->vars){
-            if(findintable(v.ident,e)) throw runtime_error("Redefinition of symbol " + v.ident);
+            if(findintable(v.ident,e, tablestack)) throw runtime_error("Redefinition of symbol " + v.ident);
             e.id = v.ident;
             e.type = v;
             e.type.type = var->type;

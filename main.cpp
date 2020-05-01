@@ -14,6 +14,7 @@ extern int yyparse();
 extern int yylex();
 using std::cout;
 using std::endl;
+extern bool haveerror;
 extern ast_node_prog *root;
 void printhelp(){
     cout << "YACLC - Yet Another C-like Language Compiler.\n";
@@ -64,10 +65,13 @@ int main(int argc,char **argv){
             cout << endl;
         }
         cout << "----------------------------End Token Stream -------------------------------\n";
+        extern int yylineno;
+        yylineno = 1;
     }
     fseek(yyin,0,0);
     yyparse();
     fclose(fp);
+    if(haveerror) exit(-1);
     if(ast){
         cout << "----------------------------Begin AST---------------------------------------\n";
         root->print(0);

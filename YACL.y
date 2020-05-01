@@ -1,14 +1,18 @@
 %{
 #define YYDEBUG 1
+#define YYERROR_VERBOSE 1
+
 #include "decl.h"
 #include <iostream>
 #include <stdio.h>
 using std::cout;
 using std::endl;
+bool haveerror = false;
 void yyerror(const char *s);
 extern int yylex(void);
 extern int yylineno;
 ast_node_prog *root;
+extern void eat_to_newline(void);
 struct yt {
   vector<ast_node*> set;
   vector<parm_type> parms;
@@ -57,13 +61,13 @@ struct yt {
 %left PLUS MINUS
 %left MULTIPLY DIVIDE
 
-%left SELFPLUS SELFMINUS
 %right UMINUS
 %right UNOT
 
 %%
 prog:        dcl SEMI prog {root->lst.insert((root->lst).begin(),$1);}
             | func prog  {root->lst.insert((root->lst).begin(),$1);}
+            | error SEMI prog { yyclearin;yyerrok;}
             | {root = new ast_node_prog();} ;
 dcl:	       funcdcl  {$$ = $1;}
             |	vardcl  {$$ = $1;};
@@ -182,7 +186,7 @@ stmt:      	IF LP expr RP stmt ELSE stmt
               tmp->body = $5;
               $$ = tmp;
             }
-            |	FOR LP assg SEMI expr SEMI assg RP stmt
+            |	FOR LP assg SEMI expr SEMI expr RP stmt
             {
               ast_node_for *tmp = new ast_node_for();
               tmp->init = $3;
@@ -199,7 +203,7 @@ stmt:      	IF LP expr RP stmt ELSE stmt
               tmp->body = $8;
               $$ = tmp;
             }
-            |	FOR LP assg SEMI SEMI assg RP stmt
+            |	FOR LP assg SEMI SEMI expr RP stmt
             {
               ast_node_for *tmp = new ast_node_for();
               tmp->init = $3;
@@ -207,7 +211,7 @@ stmt:      	IF LP expr RP stmt ELSE stmt
               tmp->body = $8;
               $$ = tmp;
             }
-            |	FOR LP SEMI expr SEMI assg RP stmt
+            |	FOR LP SEMI expr SEMI expr RP stmt
             {
               ast_node_for *tmp = new ast_node_for();
               tmp->cond = $4;
@@ -215,7 +219,7 @@ stmt:      	IF LP expr RP stmt ELSE stmt
               tmp->body = $8;
               $$ = tmp;
             }
-            |	FOR LP SEMI SEMI assg RP stmt
+            |	FOR LP SEMI SEMI expr RP stmt
             {
               ast_node_for *tmp = new ast_node_for();
               tmp->iter = $5;
@@ -274,8 +278,10 @@ stmt:      	IF LP expr RP stmt ELSE stmt
               ast_node_control *tmp = new ast_node_control();
               tmp->ctrltype = C_CONTINUE;
               $$ = tmp;
-            };
-multidim_ind: LB expr RB  multidim_ind {$4.push_back($2); $$ = $4;}
+            }
+            |error SEMI{yyclearin;yyerrok;}
+            ;
+multidim_ind: LB expr RB multidim_ind {$4.push_back($2); $$ = $4;}
             | {$$ = vector<ast_node *>();};
 assg:	      expr_left ASSG expr 
             {
@@ -488,6 +494,7 @@ expr:	       MINUS expr %prec UMINUS
             {
               ast_node_unary *tmp = new ast_node_unary();
               tmp->body = $1;
+              tmp->isright = true;
               tmp->op = O_SELFPLUS;
               $$ = tmp;
             }
@@ -495,15 +502,31 @@ expr:	       MINUS expr %prec UMINUS
             {
               ast_node_unary *tmp = new ast_node_unary();
               tmp->body = $1;
+              tmp->isright = true;
+              tmp->op = O_SELFMINUS;
+              $$ = tmp;
+            }
+             |SELFPLUS expr_left 
+            {
+              ast_node_unary *tmp = new ast_node_unary();
+              tmp->body = $2;
+              tmp->op = O_SELFPLUS;
+              $$ = tmp;
+            }
+            | SELFMINUS expr_left  
+            {
+              ast_node_unary *tmp = new ast_node_unary();
+              tmp->body = $2;
               tmp->op = O_SELFMINUS;
               $$ = tmp;
             };
 %%
  
-void yyerror(const char *s)	//当yacc遇到语法错误时，会回调yyerror函数，并且把错误信息放在参数s中
-{
-	cout <<s << " at line " <<yylineno << " ,lookahead token is "<< yychar<< endl;//直接输出错误信息
-}
+ void yyerror(const char *s)	//当yacc遇到语法错误时，会回调yyerror函数，并且把错误信息放在参数s中
+ {
+ 	cout <<s << " at line " << yylineno<<endl;//直接输出错误信息
+  haveerror = true;
+ }
 
 void printtokenpair(int tokentype){
   cout << "(" << yytname[tokentype-255] << ", ";

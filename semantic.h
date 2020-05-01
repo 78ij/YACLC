@@ -1,6 +1,7 @@
 #include <stack>
 #include <list>
 #include "decl.h"
+#include "llvm/IR/Instructions.h"
 #include <string>
 #include <vector>
 using std::stack;
@@ -12,6 +13,7 @@ struct symbolTableEntry{
     string alias;
     int offset;
     bool isfunc;
+	AllocaInst *mem;
     bool isproto;
     parm_type type;
     vector<parm_type> types; // Only for functions
@@ -27,7 +29,7 @@ struct symbolTable{
 };
 
 void error(string s);
-
+bool findintable(string id, symbolTableEntry &ret, vector<symbolTable> tablestack);
 class Semantic{
 public:
     Semantic(ast_node *_root,bool print):
@@ -40,6 +42,6 @@ private:
     parm_type analysisHelper(ast_node *root,int level);
     void printTable(const symbolTable &t);
     void print();
-    bool findintable(string id,symbolTableEntry &ret);
+    
 };
 

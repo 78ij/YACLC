@@ -162,6 +162,7 @@ class ast_node_unary :public ast_node{
 public:
 	ast_node *body;
 	operations op;
+	bool isright;
 	void print(int l) override;
 };
 class ast_node_bin : public ast_node {
