@@ -125,8 +125,8 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
                 if(e.isfunc){
                     throw runtime_error("Function name " + lv->id + "used as left value.");
                 }
-				e.type.arraydim -= lv->arrayind.size();
-				for (int i = 0; i < e.type.arraydim; i++) e.type.arraysize[i] = e.type.arraysize[i + lv->arrayind.size()];
+				if( e.type.arraydim != lv->arrayind.size()) 
+					throw runtime_error("array dimension of " + lv->id + "doesn't match.");
                 return e.type;
 			}
 			else {
@@ -309,7 +309,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
             e.type = v;
             e.type.type = var->type;
             e.isfunc = false;
-            e.isproto = true;
+            e.isproto = false;
             e.alias = "v_" + v.ident;
             tablestack[tablestack.size() - 1].entrys.push_back(e);
         }
@@ -319,8 +319,8 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         // We encounter an unary operation
         ast_node_unary *u = dynamic_cast<ast_node_unary *>(root);
         parm_type t = analysisHelper(u->body,level+1);
-		if(t.arraydim != 0 )
-			throw runtime_error("Array" + t.ident + "Used as left value.");
+		if(typeid(u->body) != typeid(ast_node_lvalue) && (u->op == O_UNOT || u->op ==O_UMINUS))
+			throw runtime_error("Right value used as left value.");
         parm_type t2;
         t2.type = T_INT;
         if(u->op == O_UNOT) return t2;

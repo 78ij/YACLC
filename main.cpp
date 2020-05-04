@@ -3,6 +3,7 @@
 #include "decl.h"
 #include <cstdio>
 #include "semantic.h"
+#include "codegen.h"
 #include <vector>
 using std::cout;
 using std::endl;
@@ -79,6 +80,8 @@ int main(int argc,char **argv){
     }
     Semantic s(root,true);
     s.analysis();
+	CodeGen c(root);
+	c.genIR();
 	return 0;
 }
 

@@ -1,5 +1,88 @@
 #include "codegen.h"
 
+AllocaInst *CodeGen::CreateEntryBlockAlloca(Function *TheFunction,
+	StringRef VarName, Type *t) {
+	IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
+		TheFunction->getEntryBlock().begin());
+	return TmpB.CreateAlloca(t, nullptr, VarName);
+}
+
+
+Value *CodeGen::tofloat(Value *a) {
+	if (a->getType() == Type::getInt32Ty(*TheContext)) {
+		return Builder->CreateSIToFP(a, Type::getFloatTy(*TheContext));
+	}
+	if (a->getType() == Type::getInt8Ty(*TheContext)) {
+		return Builder->CreateSIToFP(a, Type::getFloatTy(*TheContext));
+	}
+	return nullptr;
+}
+Value *CodeGen::toint(Value *a) {
+	if (a->getType() == Type::getFloatTy(*TheContext)) {
+		return Builder->CreateFPToSI(a, Type::getInt32Ty(*TheContext));
+	}
+	if (a->getType() == Type::getInt8Ty(*TheContext)) {
+		return Builder->CreateSExt(a, Type::getInt32Ty(*TheContext));
+	}
+	return nullptr;
+}
+
+bool CodeGen::typecmp(Type *a, Type *b) {
+	if (a == Type::getFloatTy(*TheContext)) return true;
+	else if (a == Type::getInt32Ty(*TheContext)) {
+		if (b == Type::getFloatTy(*TheContext)) return false;
+		else return true;
+	}
+	else if (a == Type::getInt8Ty(*TheContext)) {
+		if (b == Type::getInt8Ty(*TheContext)) return true;
+		else return false;
+	}
+}
+
+Value *CodeGen::convert(Value *a, Value *b) {
+	if (a == b) return a;
+	if (a->getType() == Type::getFloatTy(*TheContext)) {
+		if (b->getType() != Type::getFloatTy(*TheContext))
+			return tofloat(b);
+	}
+	else if (a->getType() == Type::getInt32Ty(*TheContext)) {
+		if (b->getType() != Type::getInt32Ty(*TheContext))
+			return toint(b);
+	}
+	return nullptr;
+}
+
+
+Type *CodeGen::gettype(parm_type p) {
+	if (p.type == T_INT && p.arraydim == 0) return (Type::getInt32Ty(*TheContext));
+	if (p.type == T_FLOAT && p.arraydim == 0) return(Type::getFloatTy(*TheContext));
+	if (p.type == T_CHAR && p.arraydim == 0) return(Type::getInt8Ty(*TheContext));
+	if (p.type == T_INT && p.arraydim != 0) {
+		int size = 1;
+		for (int i = 0; i < p.arraydim; i++) {
+			size *= p.arraysize[i];
+		}
+		Type *t = Type::getInt32Ty(*TheContext);
+		return ArrayType::get(t, size);
+	}
+	if (p.type == T_FLOAT && p.arraydim != 0) {
+		int size = 1;
+		for (int i = 0; i < p.arraydim; i++) {
+			size *= p.arraysize[i];
+		}
+		Type *t = Type::getFloatTy(*TheContext);
+		return ArrayType::get(t, size);
+	}
+	if (p.type == T_CHAR && p.arraydim != 0) {
+		int size = 1;
+		for (int i = 0; i < p.arraydim; i++) {
+			size *= p.arraysize[i];
+		}
+		Type *t = Type::getInt8Ty(*TheContext);
+		return ArrayType::get(t, size);
+	}
+}
+
 void CodeGen::genIR() {
 	codegenHelper(root);
 	TheModule->print(errs(), nullptr);
@@ -16,7 +99,7 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		global.isloop = false;
 		tablestack.push_back(global);
 		for (auto node : dynamic_cast<ast_node_prog *>(root)->lst) {
-			codegenHelper(root);
+			codegenHelper(node);
 		}
 		tablestack.pop_back();
 		assert(tablestack.empty());
@@ -50,6 +133,18 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		ast_node_lvalue *lv = dynamic_cast<ast_node_lvalue *>(root);
 		symbolTableEntry e;
 		if (findintable(lv->id, e, tablestack)) {
+			if (e.type.arraydim != 0) {
+				Value *index = codegenHelper(lv->arrayind[0]);
+				for (int i = 1; i < lv->arrayind.size(); i++) {
+					Value *tmp = codegenHelper(lv->arrayind[i]);
+					index = Builder->CreateMul(index, tmp);
+				}
+				auto zero = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0, true));
+				Type *t = gettype(e.type);
+				auto ptr = llvm::GetElementPtrInst::Create(t,e.mem, { zero, index },"", Builder->GetInsertBlock());
+				return Builder->CreateLoad(ptr);
+			}
+			else
 			return Builder->CreateLoad(e.mem, e.id);
 		}
 	}
@@ -59,7 +154,7 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		if (CondV->getType() == Type::getFloatTy(*TheContext)) {
 			CondV = Builder->CreateFPToSI(CondV, Type::getInt32Ty(*TheContext));
 		}
-		else if (CondV->getType == Type::getInt8Ty(*TheContext)) {
+		else if (CondV->getType() == Type::getInt8Ty(*TheContext)) {
 			CondV = Builder->CreateSExt(CondV, Type::getInt32Ty(*TheContext));
 		}
 
@@ -107,7 +202,7 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		if (CondV->getType() == Type::getFloatTy(*TheContext)) {
 			CondV = Builder->CreateFPToSI(CondV, Type::getInt32Ty(*TheContext));
 		}
-		else if (CondV->getType == Type::getInt8Ty(*TheContext)) {
+		else if (CondV->getType() == Type::getInt8Ty(*TheContext)) {
 			CondV = Builder->CreateSExt(CondV, Type::getInt32Ty(*TheContext));
 		}
 
@@ -140,7 +235,7 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		if (CondV->getType() == Type::getFloatTy(*TheContext)) {
 			CondV = Builder->CreateFPToSI(CondV, Type::getInt32Ty(*TheContext));
 		}
-		else if (CondV->getType == Type::getInt8Ty(*TheContext)) {
+		else if (CondV->getType() == Type::getInt8Ty(*TheContext)) {
 			CondV = Builder->CreateSExt(CondV, Type::getInt32Ty(*TheContext));
 		}
 
@@ -165,52 +260,76 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 	}
 	if (typeid(*root) == typeid(ast_node_callfunc)) {
 		//find function def in symbol table
+		std::vector<Value *> ArgsV;
 		ast_node_callfunc *cf = dynamic_cast<ast_node_callfunc *>(root);
 		symbolTableEntry e;
 		if (findintable(cf->id, e, tablestack)) {
-			//check if type are coherent
-			if (!e.isfunc) {
-				throw runtime_error("Variable name " + cf->id + "used as fucntion name.");
-			}
-			//check if parameters are coherent
-			if (e.types.size() != cf->params.size()) {
-				throw runtime_error("Function call " + cf->id + "'s parameter number not match.");
-			}
 			for (int i = 0; i < e.types.size(); i++) {
 				parm_type parm = e.types[i];
-				if (typeid(*(cf->params[i])) == typeid(ast_node_lvalue)) {
-					parm_type t = analysisHelper(cf->params[i], level + 1);
-					if (t.arraydim != parm.arraydim)
-						throw runtime_error("Function call " + cf->id + " Parameter " + to_string(i) + "Array dimension not match.");
-					if (t.arraydim == parm.arraydim && t.arraydim != 0 && t.type != parm.type)
-						throw runtime_error("Function call " + cf->id + " Parameter " + to_string(i) + "Array type not match.");
+				Value *V = codegenHelper(cf->params[i]);
+				Type *t = V->getType();
+				if (t == Type::getInt32PtrTy(*TheContext) ||
+					t == Type::getFloatPtrTy(*TheContext) ||
+					t == Type::getInt8PtrTy(*TheContext)) {
+					ArgsV.push_back(V);
 				}
-				else {
-					analysisHelper(cf->params[i], level + 1);
+				else if (t == Type::getInt32Ty(*TheContext)) {
+					if(parm.type == T_INT) ArgsV.push_back(V);
+					if (parm.type == T_FLOAT) {
+						V = Builder->CreateSIToFP(V, Type::getFloatTy(*TheContext));
+						ArgsV.push_back(V);
+					}
+					if (parm.type == T_CHAR) {
+						V = Builder->CreateTrunc(V, Type::getInt8Ty(*TheContext));
+						ArgsV.push_back(V);
+					}
+				}
+				else if (t == Type::getFloatTy(*TheContext)) {
+					if (parm.type == T_FLOAT) ArgsV.push_back(V);
+					if (parm.type == T_INT) {
+						V = Builder->CreateFPToSI(V, Type::getInt32Ty(*TheContext));
+						ArgsV.push_back(V);
+					}
+					if (parm.type == T_CHAR) {
+						V = Builder->CreateFPToSI(V, Type::getInt8Ty(*TheContext));
+						ArgsV.push_back(V);
+					}
+				}
+				else if (t == Type::getInt8Ty(*TheContext)) {
+					if (parm.type == T_CHAR) ArgsV.push_back(V);
+					if (parm.type == T_FLOAT) {
+						V = Builder->CreateSIToFP(V, Type::getFloatTy(*TheContext));
+						ArgsV.push_back(V);
+					}
+					if (parm.type == T_INT) {
+						V = Builder->CreateSExt(V, Type::getInt32Ty(*TheContext));
+						ArgsV.push_back(V);
+					}
 				}
 			}
-		}
-		else {
-			throw runtime_error("Function " + cf->id + "is not declared.");
+			return Builder->CreateCall(e.func, ArgsV, e.id + "func call");
 		}
 	}
 	if (typeid(*root) == typeid(ast_node_funcdec)) {
 		// We encounter a function prototype
 		// First search this symbol
 		ast_node_funcdec *proto = dynamic_cast<ast_node_funcdec *>(root);
+		std::vector<Type *> args;
+		parm_type tp;
+		tp.type = proto->type;
+		Type *ret = gettype(tp);
+		for (auto p : proto->parms) {
+			args.push_back(gettype(p));
+		}
+		FunctionType *FT = FunctionType::get(ret, args, false);
+		Function *F = Function::Create(FT, Function::ExternalLinkage, proto->id, TheModule.get());
 		symbolTableEntry e;
-		// If it exists, emit a semantic error
-		if (findintable(proto->id, e, tablestack)) throw runtime_error("Redefinition of symbol " + proto->id);
-		// Add it in current symbol table
 		e.id = proto->id;
 		e.isfunc = true;
+		e.func = F;
 		e.isproto = true;
 		e.type.type = proto->type;
 		e.types = proto->parms;
-		e.alias = "f_" + e.id + "_" + to_string(e.type.type);
-		for (auto i : e.types) {
-			e.alias = e.alias + "_" + to_string(i.type);
-		}
 		tablestack[tablestack.size() - 1].entrys.push_back(e);
 	}
 	if (typeid(*root) == typeid(ast_node_funcdef)) {
@@ -218,34 +337,26 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		// First search this symbol
 		ast_node_funcdef *def = dynamic_cast<ast_node_funcdef *>(root);
 		symbolTableEntry e;
+		Function *F;
 		// If it exists, check if it is a proto
-		if (findintable(def->id, e, tablestack)) {
-			if (!e.isfunc || !e.isproto) {
-				throw runtime_error("Redefinition of function " + def->id);
-			}
-			// check signature
-			if (def->parms.size() != e.types.size()) {
-				throw runtime_error("Function def " + def->id + "'s parameter number not match its prototype.");
-			}
-			for (int i = 0; i < def->parms.size(); i++) {
-				//check every parameter's type and array dimensions
-				if (def->parms[i].type != e.types[i].type)
-					throw runtime_error("Function def " + def->id + "'s parameter type not match its prototype.");
-				if (def->parms[i].arraydim != e.types[i].arraydim)
-					throw runtime_error("Function def " + def->id + "'s parameter array dimension not match its prototype.");
-			}
-		}
+		if (findintable(def->id, e, tablestack)) F = e.func;
 		else {
+			std::vector<Type *> args;
+			parm_type tp;
+			tp.type = def->ret;
+			Type *ret = gettype(tp);
+			for (auto p : def->parms) {
+				args.push_back(gettype(p));
+			}
+			FunctionType *FT = FunctionType::get(ret, args, false);
+			F = Function::Create(FT, Function::ExternalLinkage, def->id, TheModule.get());
 			symbolTableEntry e;
 			e.id = def->id;
 			e.isfunc = true;
+			e.func = F;
 			e.type.type = def->ret;
 			e.types = def->parms;
 			e.isproto = false;
-			e.alias = "f_" + e.id + "_" + to_string(e.type.type);
-			for (auto i : e.types) {
-				e.alias = e.alias + "_" + to_string(i.type);
-			}
 			tablestack[tablestack.size() - 1].entrys.push_back(e);
 		}
 
@@ -253,7 +364,6 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		// So create a new symbol table
 		symbolTable newscope;
 		newscope.scopeid = "Function Define:" + def->id;
-		newscope.level = level + 1;
 		newscope.isloop = false;
 		newscope.isfunc = true;
 		newscope.isvoid = def->ret == T_VOID ? true : false;
@@ -267,13 +377,15 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 			e.alias = "v_" + e.id;
 			tablestack[tablestack.size() - 1].entrys.push_back(e);
 		}
+		BasicBlock *BB = BasicBlock::Create(*TheContext, def->id + " entry", F);
+		Builder->SetInsertPoint(BB);
+		for (auto &Arg : F->args()) {
+			AllocaInst *Alloca = CreateEntryBlockAlloca(F, Arg.getName(), Arg.getType());
+			Builder->CreateStore(&Arg, Alloca);
+		}
 		for (auto node : def->body) {
-			analysisHelper(node, level + 1);
+			codegenHelper(node);
 		}
-		if (tablestack[tablestack.size() - 1].hasret == false && def->ret != T_VOID) {
-			throw runtime_error("Function def " + def->id + " doesn't return void, but doesn't have a return statement.");
-		}
-		if (printSymbolTable) print();
 		tablestack.pop_back();
 
 	}
@@ -283,48 +395,183 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		ast_node_vardec *var = dynamic_cast<ast_node_vardec *>(root);
 		symbolTableEntry e;
 		for (auto v : var->vars) {
-			if (findintable(v.ident, e, tablestack)) throw runtime_error("Redefinition of symbol " + v.ident);
+			
+			Function *TheFunction = Builder->GetInsertBlock()->getParent();
+			parm_type tmp;
+			tmp.type = var->type;
+			tmp.arraydim = 0;
+			Type *t = gettype(tmp);
+			if (v.arraydim != 0) {
+				int size = 1;
+				for (int i = 0; i < v.arraydim; i++) {
+					size *= v.arraysize[i];
+				}
+				Type *t2 = ArrayType::get(t, size);
+			}
+			AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, v.ident, t);
 			e.id = v.ident;
 			e.type = v;
 			e.type.type = var->type;
 			e.isfunc = false;
-			e.isproto = true;
-			e.alias = "v_" + v.ident;
+			e.isproto = false;
+			e.mem = Alloca;
 			tablestack[tablestack.size() - 1].entrys.push_back(e);
+
 		}
 	}
 
 	if (typeid(*root) == typeid(ast_node_unary)) {
 		// We encounter an unary operation
 		ast_node_unary *u = dynamic_cast<ast_node_unary *>(root);
-		parm_type t = analysisHelper(u->body, level + 1);
-		if (t.arraydim != 0)
-			throw runtime_error("Array" + t.ident + "Used as left value.");
-		parm_type t2;
-		t2.type = T_INT;
-		if (u->op == O_UNOT) return t2;
-		else return t;
+		Value *V = codegenHelper(u->body);
+		switch (u->op) {
+		case O_UMINUS:
+			if (V->getType() == Type::getFloatTy(*TheContext))
+				return Builder->CreateFNeg(V);
+			return Builder->CreateNeg(V);
+			break;
+		case O_UNOT:
+			if (V->getType() == Type::getFloatTy(*TheContext)) {
+				V = Builder->CreateFPToSI(V, Type::getInt32Ty(*TheContext));
+				return Builder->CreateNot(V);
+			}
+			return Builder->CreateNot(V);
+			break;
+		case O_SELFMINUS:
+			if (V->getType() == Type::getFloatTy(*TheContext)) {
+				return Builder->CreateFAdd(V,ConstantFP::get(*TheContext,APFloat(-1.f)));
+			}
+			else {
+				return Builder->CreateAdd(V, ConstantInt::get(*TheContext, APInt(32,-1)));
+			}
+			break;
+		case O_SELFPLUS:
+			if (V->getType() == Type::getFloatTy(*TheContext)) {
+				return Builder->CreateFAdd(V, ConstantFP::get(*TheContext, APFloat(1.f)));
+			}
+			else {
+				return Builder->CreateAdd(V, ConstantInt::get(*TheContext, APInt(32, 1)));
+			}
+			break;
+		}
 	}
 	if (typeid(*root) == typeid(ast_node_bin)) {
 		// We encounter a binary operation
 		ast_node_bin *bin = dynamic_cast<ast_node_bin *>(root);
-		parm_type t2;
-		t2.type = T_INT;
-		if (bin->op == O_EQ || bin->op == O_GE || bin->op == O_GT ||
-			bin->op == O_LE || bin->op == O_LT || bin->op == O_NEQ) {
-			return t2;
-		}
-		else {
-			parm_type l = analysisHelper(bin->left, level + 1);
-			if (l.arraydim != 0)
-				throw runtime_error("Array" + l.ident + "Used as left value.");
-			parm_type r = analysisHelper(bin->right, level + 1);
-			if (r.arraydim != 0)
-				throw runtime_error("Array" + r.ident + "Used as left value.");
-			types t = std::max(l.type, r.type);
-			l.type = t;
-			l.arraydim = 0;
-			return l;
+		Value *LHS = codegenHelper(bin->left);
+		Value *RHS = codegenHelper(bin->right);
+		if (!typecmp(LHS->getType(), RHS->getType())) std::swap(LHS, RHS);
+		Value *tmp = convert(LHS, RHS);
+		if (tmp != nullptr) RHS = tmp;
+		switch (bin->op) {
+		case O_AND:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				LHS = Builder->CreateFPToSI(LHS, Type::getInt32Ty(*TheContext));
+				RHS = Builder->CreateFPToSI(RHS, Type::getInt32Ty(*TheContext));
+			}
+			Builder->CreateAnd(LHS, RHS);
+			break;
+		case O_OR:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				LHS = Builder->CreateFPToSI(LHS, Type::getInt32Ty(*TheContext));
+				RHS = Builder->CreateFPToSI(RHS, Type::getInt32Ty(*TheContext));
+			}
+			Builder->CreateOr(LHS, RHS);
+			break;
+		case O_EQ:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				Value *v = Builder->CreateFCmp(CmpInst::Predicate::FCMP_OEQ, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			else {
+				Value *v = Builder->CreateICmp(CmpInst::Predicate::ICMP_EQ, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			break;
+		case O_NEQ:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				Value *v = Builder->CreateFCmp(CmpInst::Predicate::FCMP_ONE, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			else {
+				Value *v = Builder->CreateICmp(CmpInst::Predicate::ICMP_NE, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			break;
+		case O_GT:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				Value *v = Builder->CreateFCmp(CmpInst::Predicate::FCMP_OGT, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			else {
+				Value *v = Builder->CreateICmp(CmpInst::Predicate::ICMP_SGT, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			break;
+		case O_LT:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				Value *v = Builder->CreateFCmp(CmpInst::Predicate::FCMP_OLT, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			else {
+				Value *v = Builder->CreateICmp(CmpInst::Predicate::ICMP_SLT, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			break;
+		case O_GE:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				Value *v = Builder->CreateFCmp(CmpInst::Predicate::FCMP_OGE, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			else {
+				Value *v = Builder->CreateICmp(CmpInst::Predicate::ICMP_SGE, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			break;
+		case O_LE:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				Value *v = Builder->CreateFCmp(CmpInst::Predicate::FCMP_OLE, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			else {
+				Value *v = Builder->CreateICmp(CmpInst::Predicate::ICMP_SLE, LHS, RHS);
+				return Builder->CreateSExt(v, Type::getInt32Ty(*TheContext));
+			}
+			break;
+		case O_PLUS:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				return Builder->CreateFAdd(LHS, RHS);
+			}
+			else {
+				return Builder->CreateAdd(LHS, RHS);
+			}
+			break;
+		case O_MINUS:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				RHS = Builder->CreateFNeg(RHS);
+				return Builder->CreateFAdd(LHS, RHS);
+			}
+			else {
+				RHS = Builder->CreateNeg(RHS);
+				return Builder->CreateAdd(LHS, RHS);
+			}
+			break;
+		case O_MULTIPLY:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				return Builder->CreateFMul(LHS, RHS);
+			}
+			else {
+				return Builder->CreateMul(LHS, RHS);
+			}
+			break;
+		case O_DIVIDE:
+			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
+				return Builder->CreateFDiv(LHS, RHS);
+			}
+			else {
+				return Builder->CreateSDiv(LHS, RHS);
+			}
+			break;
 		}
 
 	}
@@ -332,22 +579,38 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 	if (typeid(*root) == typeid(ast_node_assg)) {
 		// We encounter an assignment statement
 		ast_node_assg *assg = dynamic_cast<ast_node_assg *>(root);
-		if (typeid(*(assg->left)) != typeid(ast_node_lvalue))
-			throw runtime_error("The left part of assignment is not a left value");
-		parm_type t = analysisHelper(assg->left, level + 1);
-		if (t.arraydim != 0)
-			throw runtime_error("Array" + t.ident + "Used as left value.");
-		analysisHelper(assg->right, level + 1);
-		return t;
+		ast_node_lvalue *lv = dynamic_cast<ast_node_lvalue *>(assg->left);
+		Value *v = codegenHelper(assg->right);
+		symbolTableEntry e;
+		if (findintable(lv->id, e, tablestack)) {
+			if (e.type.arraydim != 0) {
+				Value *index = codegenHelper(lv->arrayind[0]);
+				for (int i = 1; i < lv->arrayind.size(); i++) {
+					Value *tmp = codegenHelper(lv->arrayind[i]);
+					index = Builder->CreateMul(index, tmp);
+				}
+				auto zero = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0, true));
+				Type *t = gettype(e.type);
+				auto ptr = llvm::GetElementPtrInst::Create(t, e.mem, { zero, index }, "", Builder->GetInsertBlock());
+				return Builder->CreateStore(v, ptr);
+			}
+			else
+				return Builder->CreateStore(v,e.mem);
+		}
 	}
 
 	if (typeid(*root) == typeid(ast_node_const)) {
-		// We encounter an assignment statement
+		// We encounter an const statement
 		ast_node_const *c = dynamic_cast<ast_node_const *>(root);
-		parm_type t;
-		t.type = c->type;
-		t.arraydim = 0;
-		return t;
+		if (c->type == T_INT) {
+			return ConstantInt::get(*TheContext, APInt(32, c->data.i));
+		}
+		if (c->type == T_FLOAT) {
+			return ConstantFP::get(*TheContext, APFloat(c->data.f));
+		}
+		if (c->type == T_CHAR) {
+			return ConstantInt::get(*TheContext, APInt(8, c->data.c));
+		}
 	}
 	return nullptr;
 }
