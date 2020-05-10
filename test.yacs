@@ -1,6 +1,15 @@
+int add(int a,int b){
+    return a + b;
+}
+
 int fun(int x,char y)
 {
-    int a;
+    int a,b;
     a = 5;
     a = 6 + 7 * 9;
+    for(a = 0;a < 10 || a > 8;a++) {
+        if(add(a,b) > 5) break;
+        else continue;
+    }
+    return a;
 }

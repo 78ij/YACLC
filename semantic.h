@@ -55,6 +55,7 @@ struct symbolTable{
     bool hasret;
     bool isvoid;
 	BasicBlock *next;
+	BasicBlock *cont;
     vector<symbolTableEntry> entrys;
 };
 

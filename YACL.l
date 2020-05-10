@@ -76,6 +76,7 @@ floatcon    [0-9]*\.?[0-9]?([eE][-+]?[0-9]+)?
 <INITIAL>float    	       {return (FLOAT);}
 <INITIAL>void              {return (VOID);}
 <INITIAL>if                {return (IF);}
+<INITIAL>else              {return (ELSE);}
 <INITIAL>return            {return (RETURN);}
 <INITIAL>break             {return (BREAK);}
 <INITIAL>continue          {return (CONTINUE);}

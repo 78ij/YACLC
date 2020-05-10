@@ -104,16 +104,21 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		tablestack.pop_back();
 		assert(tablestack.empty());
 	}
-	//if (typeid(*root) == typeid(ast_node_control)) {
-	//	//Perform Check: is control sequence in a loop?
-	//	//Check all open scopes
-	//	int i;
-	//	for (i = tablestack.size() - 1; i >= 0; i--) {
-	//		if (tablestack[i].isloop == true) break;
-	//	}
-	//	if (i == -1)
-	//		throw runtime_error("Control statement is not in a loop.");
-	//}
+	if (typeid(*root) == typeid(ast_node_control)) {
+		//Perform Check: is control sequence in a loop?
+		//Check all open scopes
+		ast_node_control *ctrl = dynamic_cast<ast_node_control*>(root);
+		int i;
+		for (i = tablestack.size() - 1; i >= 0; i--) {
+			if (tablestack[i].isloop == true) break;
+		}
+		if (ctrl->ctrltype == C_BREAK) {
+			Builder->CreateBr(tablestack[i].next);
+		}
+		else {
+			Builder->CreateBr(tablestack[i].cont);
+		}
+	}
 	if (typeid(*root) == typeid(ast_node_bigbrac)) {
 		// We are now entering a new scope
 		// So create a new symbol table
@@ -123,7 +128,7 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		newscope.isloop = false;
 		tablestack.push_back(newscope);
 		for (auto node : dynamic_cast<ast_node_bigbrac *>(root)->body) {
-			codegenHelper(root);
+			codegenHelper(node);
 		}
 		tablestack.pop_back();
 	}
@@ -186,16 +191,20 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		return nullptr;
 	}
 	if (typeid(*root) == typeid(ast_node_while)) {
-		symbolTable newscope;
-		newscope.scopeid = "While Statement";
-		newscope.isloop = true;
-		tablestack.push_back(newscope);
-
 		ast_node_while *wi = dynamic_cast<ast_node_while *>(root);
 		Function *TheFunction = Builder->GetInsertBlock()->getParent();
 		BasicBlock *CondBB = BasicBlock::Create(*TheContext, "while cond", TheFunction);
 		BasicBlock *LoopBB = BasicBlock::Create(*TheContext, "while loop", TheFunction);
 		BasicBlock *AfterBB = BasicBlock::Create(*TheContext, "after while loop", TheFunction);
+		symbolTable newscope;
+		newscope.scopeid = "While Statement";
+		newscope.isloop = true;
+
+		
+		newscope.next = AfterBB;
+		newscope.cont = CondBB;
+		tablestack.push_back(newscope);
+
 		Builder->CreateBr(CondBB);
 		Builder->SetInsertPoint(CondBB);
 		Value *CondV = codegenHelper(wi->cond);
@@ -209,6 +218,7 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		CondV = Builder->CreateICmpNE(CondV, ConstantInt::get(*TheContext, APInt(32, 0, true)), "while cond");
 		Builder->CreateCondBr(CondV, LoopBB, AfterBB);
 		Builder->SetInsertPoint(LoopBB);
+
 		codegenHelper(wi->body);
 		Builder->CreateBr(CondBB);
 		Builder->SetInsertPoint(AfterBB);
@@ -217,18 +227,21 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 	}
 	if (typeid(*root) == typeid(ast_node_for)) {
 		ast_node_for *fo = dynamic_cast<ast_node_for *>(root);
-		symbolTable newscope;
-		newscope.scopeid = "For Statement";
-		newscope.isloop = true;
-		tablestack.push_back(newscope);
-
 		Function *TheFunction = Builder->GetInsertBlock()->getParent();
-		codegenHelper(fo->init);
-
 		BasicBlock *CondBB = BasicBlock::Create(*TheContext, "for cond", TheFunction);
 		BasicBlock *BodyBB = BasicBlock::Create(*TheContext, "for body", TheFunction);
 		BasicBlock *IterBB = BasicBlock::Create(*TheContext, "for iter", TheFunction);
-		BasicBlock *AfterBB = BasicBlock::Create(*TheContext, "for iter", TheFunction);
+		BasicBlock *AfterBB = BasicBlock::Create(*TheContext, "for after", TheFunction);
+		symbolTable newscope;
+		newscope.scopeid = "For Statement";
+		newscope.isloop = true;
+		newscope.cont = IterBB;
+		newscope.next = AfterBB;
+		tablestack.push_back(newscope);
+
+		codegenHelper(fo->init);
+
+
 		Builder->CreateBr(CondBB);
 		Builder->SetInsertPoint(CondBB);
 		Value *CondV = codegenHelper(fo->cond);
@@ -256,7 +269,23 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		if (!fo->stmt) Builder->CreateRet(nullptr);
 		Value *retval = codegenHelper(fo->stmt);
 		Type * tr = TheFunction->getReturnType();
-		
+		if (tr == Type::getFloatTy(*TheContext)) {
+			if (retval->getType() != Type::getFloatTy(*TheContext))
+				retval = Builder->CreateSIToFP(retval, Type::getFloatTy(*TheContext));
+		}
+		if (tr == Type::getInt32Ty(*TheContext)) {
+			if (retval->getType() == Type::getFloatTy(*TheContext))
+				retval = Builder->CreateFPToSI(retval, Type::getInt32Ty(*TheContext));
+			if (retval->getType() == Type::getInt8Ty(*TheContext))
+				retval = Builder->CreateSExt(retval, Type::getInt32Ty(*TheContext));
+		}
+		if (tr == Type::getInt8Ty(*TheContext)) {
+			if (retval->getType() == Type::getFloatTy(*TheContext))
+				retval = Builder->CreateFPToSI(retval, Type::getInt8Ty(*TheContext));
+			if (retval->getType() == Type::getInt32Ty(*TheContext))
+				retval = Builder->CreateTrunc(retval, Type::getInt8Ty(*TheContext));
+		}
+		Builder->CreateRet(retval);
 	}
 	if (typeid(*root) == typeid(ast_node_callfunc)) {
 		//find function def in symbol table
@@ -344,6 +373,7 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 			std::vector<Type *> args;
 			parm_type tp;
 			tp.type = def->ret;
+			tp.arraydim = 0;
 			Type *ret = gettype(tp);
 			for (auto p : def->parms) {
 				args.push_back(gettype(p));
@@ -368,8 +398,14 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		newscope.isfunc = true;
 		newscope.isvoid = def->ret == T_VOID ? true : false;
 		tablestack.push_back(newscope);
+		BasicBlock *BB = BasicBlock::Create(*TheContext, def->id + " entry", F);
+		Builder->SetInsertPoint(BB);
 		// push back all the parameters into the symbol table
 		for (int i = 0; i < def->parms.size(); i++) {
+			Argument *arg = F->getArg(i);
+			AllocaInst *Alloca = CreateEntryBlockAlloca(F, arg->getName(), arg->getType());
+			Builder->CreateStore(arg, Alloca);
+			e.mem = Alloca;
 			e.id = def->parms[i].ident;
 			e.type = def->parms[i];
 			e.isfunc = false;
@@ -377,12 +413,7 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 			e.alias = "v_" + e.id;
 			tablestack[tablestack.size() - 1].entrys.push_back(e);
 		}
-		BasicBlock *BB = BasicBlock::Create(*TheContext, def->id + " entry", F);
-		Builder->SetInsertPoint(BB);
-		for (auto &Arg : F->args()) {
-			AllocaInst *Alloca = CreateEntryBlockAlloca(F, Arg.getName(), Arg.getType());
-			Builder->CreateStore(&Arg, Alloca);
-		}
+
 		for (auto node : def->body) {
 			codegenHelper(node);
 		}
@@ -424,6 +455,25 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		// We encounter an unary operation
 		ast_node_unary *u = dynamic_cast<ast_node_unary *>(root);
 		Value *V = codegenHelper(u->body);
+		ast_node_lvalue *lv = dynamic_cast<ast_node_lvalue *>(u->body);
+		Value *ptr;
+		if (u->op == O_SELFPLUS || u->op == O_SELFMINUS) {
+			symbolTableEntry e;
+			if (findintable(lv->id, e, tablestack)) {
+				if (e.type.arraydim != 0) {
+					Value *index = codegenHelper(lv->arrayind[0]);
+					for (int i = 1; i < lv->arrayind.size(); i++) {
+						Value *tmp = codegenHelper(lv->arrayind[i]);
+						index = Builder->CreateMul(index, tmp);
+					}
+					auto zero = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0, true));
+					Type *t = gettype(e.type);
+					ptr = llvm::GetElementPtrInst::Create(t, e.mem, { zero, index }, "", Builder->GetInsertBlock());
+				}
+				else
+					ptr = e.mem;
+			}
+		}
 		switch (u->op) {
 		case O_UMINUS:
 			if (V->getType() == Type::getFloatTy(*TheContext))
@@ -439,18 +489,22 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 			break;
 		case O_SELFMINUS:
 			if (V->getType() == Type::getFloatTy(*TheContext)) {
-				return Builder->CreateFAdd(V,ConstantFP::get(*TheContext,APFloat(-1.f)));
+				V = Builder->CreateFAdd(V,ConstantFP::get(*TheContext,APFloat(-1.f)));
+				V = Builder->CreateStore(V, ptr);
 			}
 			else {
-				return Builder->CreateAdd(V, ConstantInt::get(*TheContext, APInt(32,-1)));
+				V = Builder->CreateAdd(V, ConstantInt::get(*TheContext, APInt(32,-1)));
+				V = Builder->CreateStore(V, ptr);
 			}
 			break;
 		case O_SELFPLUS:
 			if (V->getType() == Type::getFloatTy(*TheContext)) {
-				return Builder->CreateFAdd(V, ConstantFP::get(*TheContext, APFloat(1.f)));
+				V = Builder->CreateFAdd(V, ConstantFP::get(*TheContext, APFloat(1.f)));
+				V = Builder->CreateStore(V, ptr);
 			}
 			else {
-				return Builder->CreateAdd(V, ConstantInt::get(*TheContext, APInt(32, 1)));
+				V = Builder->CreateAdd(V, ConstantInt::get(*TheContext, APInt(32, 1)));
+				V = Builder->CreateStore(V, ptr);
 			}
 			break;
 		}
@@ -469,14 +523,14 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 				LHS = Builder->CreateFPToSI(LHS, Type::getInt32Ty(*TheContext));
 				RHS = Builder->CreateFPToSI(RHS, Type::getInt32Ty(*TheContext));
 			}
-			Builder->CreateAnd(LHS, RHS);
+			return Builder->CreateAnd(LHS, RHS);
 			break;
 		case O_OR:
 			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
 				LHS = Builder->CreateFPToSI(LHS, Type::getInt32Ty(*TheContext));
 				RHS = Builder->CreateFPToSI(RHS, Type::getInt32Ty(*TheContext));
 			}
-			Builder->CreateOr(LHS, RHS);
+			return Builder->CreateOr(LHS, RHS);
 			break;
 		case O_EQ:
 			if (LHS->getType() == Type::getFloatTy(*TheContext)) {
