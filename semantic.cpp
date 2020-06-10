@@ -26,7 +26,8 @@ using std::cout;
 using std::endl;
 using std::find_if;
 using std::atoi;
-void error(string s){
+void Semantic::error(string s){
+	cout << "In Scope " + tablestack[tablestack.size() - 1].scopeid << " :\n\t";
     cout << "Static Semantic Analysis Failed: " << s << endl;
 }
 
@@ -101,8 +102,8 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         for(i = tablestack.size() - 1;i >= 0;i--){
             if(tablestack[i].isloop == true) break;
         }
-        if(i == -1)
-            cout << "Semantic Error: " <<("Control statement is not in a loop.");
+		if (i == -1)
+			error("Control statement is not in a loop.");
     }
     if(typeid(*root) == typeid(ast_node_bigbrac)){
         // We are now entering a new scope
@@ -127,16 +128,25 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
             if(findintable(lv->id,e,tablestack)){
                 //check if type are coherent
                 if(e.isfunc){
-                    cout << "Semantic Error: " <<("Function name " + lv->id + "used as left value.");
+                   error("Function name " + lv->id + " used as left value.");
                 }
-				if( e.type.arraydim != lv->arrayind.size()) 
-					cout << "Semantic Error: " <<("array dimension of " + lv->id + "doesn't match.");
+				if (e.type.arraydim != lv->arrayind.size())
+					if (lv->iscallfunc && lv->arrayind.size() == 0);
+					else
+						error("array dimension of " + lv->id + " doesn't match.");
+				for (auto i : lv->arrayind) {
+					parm_type t = analysisHelper(i, level + 1);
+					if (t.type != T_INT)
+						error("Array " + lv->id + "'s index is not int value.");
+				}
                 return e.type;
 			}
 			else {
-				cout << "Semantic Error: " <<("Variable name " + lv->id + "not defined.");
+				error("Variable name " + lv->id + " not defined.");
+				return parm_type();
 			}
         }
+
     }
     if(typeid(*root) == typeid(ast_node_if)){
         ast_node_if * st = dynamic_cast<ast_node_if *>(root);
@@ -184,10 +194,10 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
             if(tablestack[i].isfunc == true) break;
         }
         if(i == -1)
-            cout << "Semantic Error: " <<("Return statement is not in a function.");
+           error("Return statement is not in a function.");
         else if((tablestack[i].isvoid && fo->stmt != NULL) ||
                 (!tablestack[i].isvoid && fo->stmt == NULL))
-            cout << "Semantic Error: " <<("Return statement does not match function return value.");
+           error("Return statement does not match function return value.");
         tablestack[i].hasret = true;
     }
     if(typeid(*root) == typeid(ast_node_callfunc)){
@@ -197,27 +207,29 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         if(findintable(cf->id,e,tablestack)){
             //check if type are coherent
             if(!e.isfunc){
-                cout << "Semantic Error: " <<("Variable name " + cf->id + "used as fucntion name.");
+               error("Variable name " + cf->id + " used as fucntion name.");
             }
             //check if parameters are coherent
             if(e.types.size() != cf->params.size()){
-                cout << "Semantic Error: " <<("Function call " + cf->id + "'s parameter number not match.");
+               error("Function call " + cf->id + "'s parameter number not match.");
             }
             for(int i = 0;i < e.types.size();i++){
                 parm_type parm = e.types[i];
                 if(typeid(*(cf->params[i])) == typeid(ast_node_lvalue)){
+					dynamic_cast<ast_node_lvalue *>(cf->params[i])->iscallfunc = true;
                     parm_type t = analysisHelper(cf->params[i],level+1);
                     if(t.arraydim != parm.arraydim)
-                        cout << "Semantic Error: " <<("Function call " + cf->id + " Parameter " + to_string(i) + "Array dimension not match.");
+                       error("Function call " + cf->id + " Parameter " + to_string(i) + ": Array dimension not match.");
                     if(t.arraydim == parm.arraydim && t.arraydim != 0 && t.type != parm.type)
-                        cout << "Semantic Error: " <<("Function call " + cf->id + " Parameter " + to_string(i) + "Array type not match.");
+                       error("Function call " + cf->id + " Parameter " + to_string(i) + ": Array type not match.");
                 }
                 else{
                     analysisHelper(cf->params[i],level+1);
                 }
             }
+			return e.type;
         }else{
-            cout << "Semantic Error: " <<("Function " + cf->id + "is not declared.");
+           error("Function " + cf->id + " is not declared.\n");
         }
     }
     if(typeid(*root) == typeid(ast_node_funcdec)){
@@ -226,7 +238,8 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         ast_node_funcdec *proto = dynamic_cast<ast_node_funcdec *>(root);
         symbolTableEntry e;
         // If it exists, emit a semantic error
-        if(findintable(proto->id,e, tablestack)) cout << "Semantic Error: " <<("Redefinition of symbol " + proto->id);
+		if (findintable(proto->id, e, tablestack))
+			error("Redefinition of symbol " + proto->id);
         // Add it in current symbol table
         e.id = proto->id;
         e.isfunc = true;
@@ -247,18 +260,18 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         // If it exists, check if it is a proto
         if(findintable(def->id,e, tablestack)){
             if(!e.isfunc || !e.isproto){
-                cout << "Semantic Error: " <<("Redefinition of function " + def->id);
+               error("Redefinition of function " + def->id);
             }
             // check signature
             if(def->parms.size() != e.types.size()){
-                cout << "Semantic Error: " <<("Function def " + def->id + "'s parameter number not match its prototype.");
+               error("Function def " + def->id + "'s parameter number not match its prototype.");
             }
             for(int i = 0;i < def->parms.size();i++){
                 //check every parameter's type and array dimensions
                 if(def->parms[i].type != e.types[i].type)
-                    cout << "Semantic Error: " <<("Function def " + def->id + "'s parameter type not match its prototype.");
+                   error("Function def " + def->id + "'s parameter type not match its prototype.");
                 if(def->parms[i].arraydim != e.types[i].arraydim)
-                    cout << "Semantic Error: " <<("Function def " + def->id + "'s parameter array dimension not match its prototype.");
+                   error("Function def " + def->id + "'s parameter array dimension not match its prototype.");
             }
         }else{
             symbolTableEntry e;
@@ -281,6 +294,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         newscope.level = level + 1;
         newscope.isloop = false;
         newscope.isfunc = true;
+		newscope.hasret = false;
         newscope.isvoid = def->ret == T_VOID? true : false;
         tablestack.push_back(newscope);
 		// push back all the parameters into the symbol table
@@ -290,13 +304,14 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
 			e.isfunc = false;
 			e.isproto = false;
 			e.alias = "v_" + e.id;
+
 			tablestack[tablestack.size() - 1].entrys.push_back(e);
 		}
         for(auto node : def->body){
             analysisHelper(node,level + 1);
         }
         if(tablestack[tablestack.size() - 1].hasret == false && def->ret != T_VOID){
-            cout << "Semantic Error: " <<("Function def " + def->id + " doesn't return void, but doesn't have a return statement.");
+           error("Function def " + def->id + " doesn't return void, but doesn't have a return statement.");
         }
         if(printSymbolTable) print();
         tablestack.pop_back();
@@ -308,7 +323,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         ast_node_vardec *var = dynamic_cast<ast_node_vardec *>(root);
         symbolTableEntry e;
         for(auto v :var->vars){
-            if(findintable(v.ident,e, tablestack)) cout << "Semantic Error: " <<("Redefinition of symbol " + v.ident);
+			if (findintable(v.ident, e, tablestack))error("Redefinition of symbol " + v.ident);
             e.id = v.ident;
             e.type = v;
             e.type.type = var->type;
@@ -323,11 +338,10 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         // We encounter an unary operation
         ast_node_unary *u = dynamic_cast<ast_node_unary *>(root);
         parm_type t = analysisHelper(u->body,level+1);
-		if(t.type != T_INT)
-			cout << "Semantic Error: " <<("Array index is not int value.");
+		
 		if(typeid(u->body) != typeid(ast_node_lvalue) && (u->op == O_UNOT || u->op ==O_UMINUS))
-			cout << "Semantic Error: " <<("Right value used as left value.");
-        parm_type t2;
+			error("Right value used as left value.");
+		parm_type t2;
         t2.type = T_INT;
         if(u->op == O_UNOT) return t2;
         else return t;
@@ -339,6 +353,8 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         t2.type = T_INT;
         if(bin->op == O_EQ || bin->op==O_GE || bin->op==O_GT ||
             bin->op == O_LE || bin->op == O_LT ||bin->op == O_NEQ){
+				parm_type l = analysisHelper(bin->left, level + 1);
+				parm_type r = analysisHelper(bin->right, level + 1);
                 return t2;
         }
         else{
@@ -356,10 +372,10 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         // We encounter an assignment statement
         ast_node_assg *assg = dynamic_cast<ast_node_assg *>(root);
         if(typeid(*(assg->left)) != typeid(ast_node_lvalue))
-            cout << "Semantic Error: " <<("The left part of assignment is not a left value");
+           error("The left part of assignment is not a left value");
         parm_type t = analysisHelper(assg->left,level+1);
-		if (t.arraydim != 0)
-			cout << "Semantic Error: " <<("Array" + t.ident + "Used as left value.");
+		//if (t.arraydim != 0)
+		//	cout << "Semantic Error: " <<("Array" + t.ident + "Used as left value.");
         analysisHelper(assg->right,level+1);
         return t;
     }

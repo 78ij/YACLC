@@ -49,7 +49,7 @@ public:
 		TheFPM->add(createGVNPass());
 		// Simplify the control flow graph (deleting unreachable blocks, etc).
 		TheFPM->add(createCFGSimplificationPass());
-
+		
 		TheFPM->doInitialization();
 	}
 	void genIR();
@@ -62,10 +62,11 @@ private:
 	vector<symbolTable> tablestack;
 	Value *codegenHelper(ast_node *root);
 	AllocaInst *CreateEntryBlockAlloca(Function *TheFunction,
-		StringRef VarName, Type *t);
+		StringRef VarName, Type *t,int size);
 	Type *gettype(parm_type p);
 	Value *tofloat(Value *a);
 	Value *toint(Value *a);
+	Value *tochar(Value *a);
 	Value *convert(Value *a, Value *b);
 	bool typecmp(Type *a, Type *b);
 };

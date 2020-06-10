@@ -41,7 +41,7 @@ struct symbolTableEntry{
     string alias;
     int offset;
     bool isfunc;
-	AllocaInst *mem;
+	Value *mem;
 	Function *func;
     bool isproto;
     parm_type type;
@@ -59,7 +59,6 @@ struct symbolTable{
     vector<symbolTableEntry> entrys;
 };
 
-void error(string s);
 bool findintable(string id, symbolTableEntry &ret, vector<symbolTable> tablestack);
 class Semantic{
 public:
@@ -73,7 +72,8 @@ private:
     parm_type analysisHelper(ast_node *root,int level);
     void printTable(const symbolTable &t);
     void print();
-    
+	void error(string s);
+
 };
 
 #endif

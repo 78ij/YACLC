@@ -1,10 +1,11 @@
 #include "codegen.h"
 
 AllocaInst *CodeGen::CreateEntryBlockAlloca(Function *TheFunction,
-	StringRef VarName, Type *t) {
+	StringRef VarName, Type *t,int size) {
 	IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
 		TheFunction->getEntryBlock().begin());
-	return TmpB.CreateAlloca(t, nullptr, VarName);
+	
+	return TmpB.CreateAlloca(t, ConstantInt::get(Type::getInt32Ty(*TheContext),APInt(32,size,true)));
 }
 
 
@@ -15,7 +16,7 @@ Value *CodeGen::tofloat(Value *a) {
 	if (a->getType() == Type::getInt8Ty(*TheContext)) {
 		return Builder->CreateSIToFP(a, Type::getFloatTy(*TheContext));
 	}
-	return nullptr;
+	return a;
 }
 Value *CodeGen::toint(Value *a) {
 	if (a->getType() == Type::getFloatTy(*TheContext)) {
@@ -24,7 +25,17 @@ Value *CodeGen::toint(Value *a) {
 	if (a->getType() == Type::getInt8Ty(*TheContext)) {
 		return Builder->CreateSExt(a, Type::getInt32Ty(*TheContext));
 	}
-	return nullptr;
+	return a;
+}
+
+Value *CodeGen::tochar(Value *a) {
+	if (a->getType() == Type::getFloatTy(*TheContext)) {
+		return Builder->CreateFPToSI(a, Type::getInt8Ty(*TheContext));
+	}
+	if (a->getType() == Type::getInt32Ty(*TheContext)) {
+		return Builder->CreateTrunc(a, Type::getInt8Ty(*TheContext));
+	}
+	return a;
 }
 
 bool CodeGen::typecmp(Type *a, Type *b) {
@@ -85,6 +96,8 @@ Type *CodeGen::gettype(parm_type p) {
 
 void CodeGen::genIR() {
 	codegenHelper(root);
+	/*for (auto &F : *TheModule)
+		TheFPM->run(F);*/
 	TheModule->print(errs(), nullptr);
 }
 
@@ -138,15 +151,44 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		ast_node_lvalue *lv = dynamic_cast<ast_node_lvalue *>(root);
 		symbolTableEntry e;
 		if (findintable(lv->id, e, tablestack)) {
+			parm_type temp;
+			temp.arraydim = 0;
+			temp.isarray = false;
+			temp.type = e.type.type;
+			Type *t = gettype(temp);
 			if (e.type.arraydim != 0) {
-				Value *index = codegenHelper(lv->arrayind[0]);
-				for (int i = 1; i < lv->arrayind.size(); i++) {
-					Value *tmp = codegenHelper(lv->arrayind[i]);
-					index = Builder->CreateMul(index, tmp);
-				}
 				auto zero = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0, true));
-				Type *t = gettype(e.type);
-				auto ptr = llvm::GetElementPtrInst::Create(t,e.mem, { zero, index },"", Builder->GetInsertBlock());
+				if (lv->arrayind.size() == 0) {
+					Value *ptr;
+					if (e.mem->getType()->isPointerTy() && e.mem->getType()->getPointerElementType()->isPointerTy()) {
+						ptr = Builder->CreateLoad(e.mem);
+						ptr = llvm::GetElementPtrInst::Create(t, ptr, { zero }, "", Builder->GetInsertBlock());
+					}
+					else {
+						ptr = llvm::GetElementPtrInst::Create(t, e.mem, { zero }, "", Builder->GetInsertBlock());
+					}
+					return ptr;
+				}
+				Value *index = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0, true));
+				for (int i = 0; i < lv->arrayind.size(); i++) {
+					Value *tmp = codegenHelper(lv->arrayind[i]);
+					int temp = 1;
+					for (int j = i + 1; j < lv->arrayind.size(); j++) {
+						temp *= e.type.arraysize[j];
+					}
+					Value *dims = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, temp, true));
+					tmp = Builder->CreateMul(dims, tmp);
+					index = Builder->CreateAdd(index, tmp);
+				}
+			
+				Value *ptr;
+				if (e.mem->getType()->isPointerTy() && e.mem->getType()->getPointerElementType()->isPointerTy()) {
+					ptr = Builder->CreateLoad(e.mem);
+					ptr = llvm::GetElementPtrInst::Create(t, ptr, { index }, "", Builder->GetInsertBlock());
+				}
+				else {
+					ptr = llvm::GetElementPtrInst::Create(t,e.mem, { index }, "", Builder->GetInsertBlock());
+				}
 				return Builder->CreateLoad(ptr);
 			}
 			else
@@ -170,9 +212,11 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		BasicBlock *ThenBB = BasicBlock::Create(*TheContext, "then", TheFunction);
 		BasicBlock *ElseBB = BasicBlock::Create(*TheContext, "else");
 		BasicBlock *MergeBB = BasicBlock::Create(*TheContext, "ifcont");
-
-		Builder->CreateCondBr(CondV, ThenBB, ElseBB);
-
+		if(st->el != nullptr)
+			Builder->CreateCondBr(CondV, ThenBB, ElseBB);
+		else {
+			Builder->CreateCondBr(CondV, ThenBB, MergeBB);
+		}
 		Builder->SetInsertPoint(ThenBB);
 
 		codegenHelper(st->body);
@@ -244,16 +288,22 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 
 		Builder->CreateBr(CondBB);
 		Builder->SetInsertPoint(CondBB);
-		Value *CondV = codegenHelper(fo->cond);
-		if (CondV->getType() == Type::getFloatTy(*TheContext)) {
-			CondV = Builder->CreateFPToSI(CondV, Type::getInt32Ty(*TheContext));
+		Value *CondV;
+		if (fo->cond != nullptr) {
+			CondV = codegenHelper(fo->cond);
+			if (CondV->getType() == Type::getFloatTy(*TheContext)) {
+				CondV = Builder->CreateFPToSI(CondV, Type::getInt32Ty(*TheContext));
+			}
+			else if (CondV->getType() == Type::getInt8Ty(*TheContext)) {
+				CondV = Builder->CreateSExt(CondV, Type::getInt32Ty(*TheContext));
+			}
+			CondV = Builder->CreateICmpNE(CondV, ConstantInt::get(*TheContext, APInt(32, 0, true)), "for cond");
+			Builder->CreateCondBr(CondV, BodyBB, AfterBB);
 		}
-		else if (CondV->getType() == Type::getInt8Ty(*TheContext)) {
-			CondV = Builder->CreateSExt(CondV, Type::getInt32Ty(*TheContext));
+		else {
+			Builder->CreateBr(BodyBB);
 		}
 
-		CondV = Builder->CreateICmpNE(CondV, ConstantInt::get(*TheContext, APInt(32, 0, true)), "for cond");
-		Builder->CreateCondBr(CondV, BodyBB, AfterBB);
 		Builder->SetInsertPoint(BodyBB);
 		codegenHelper(fo->body);
 		Builder->CreateBr(IterBB);
@@ -335,6 +385,10 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 						ArgsV.push_back(V);
 					}
 				}
+				else if (t -> isArrayTy()) {
+
+					ArgsV.push_back(V);
+				}
 			}
 			return Builder->CreateCall(e.func, ArgsV, e.id + "func call");
 		}
@@ -348,7 +402,12 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		tp.type = proto->type;
 		Type *ret = gettype(tp);
 		for (auto p : proto->parms) {
-			args.push_back(gettype(p));
+			Type *t = gettype(p);
+			if (t->isArrayTy()) {
+				args.push_back(PointerType::get(t->getArrayElementType(), 0));
+			}
+			else
+				args.push_back(t);
 		}
 		FunctionType *FT = FunctionType::get(ret, args, false);
 		Function *F = Function::Create(FT, Function::ExternalLinkage, proto->id, TheModule.get());
@@ -376,7 +435,11 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 			tp.arraydim = 0;
 			Type *ret = gettype(tp);
 			for (auto p : def->parms) {
-				args.push_back(gettype(p));
+				Type *t = gettype(p);
+				if (t->isArrayTy()) {
+					args.push_back(PointerType::get(t->getArrayElementType(),0));
+				}else 
+					args.push_back(t);
 			}
 			FunctionType *FT = FunctionType::get(ret, args, false);
 			F = Function::Create(FT, Function::ExternalLinkage, def->id, TheModule.get());
@@ -403,7 +466,7 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		// push back all the parameters into the symbol table
 		for (int i = 0; i < def->parms.size(); i++) {
 			Argument *arg = F->getArg(i);
-			AllocaInst *Alloca = CreateEntryBlockAlloca(F, arg->getName(), arg->getType());
+			AllocaInst *Alloca = CreateEntryBlockAlloca(F, arg->getName(), arg->getType(),1);
 			Builder->CreateStore(arg, Alloca);
 			e.mem = Alloca;
 			e.id = def->parms[i].ident;
@@ -425,30 +488,78 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		// We encounter a variable declaration
 		ast_node_vardec *var = dynamic_cast<ast_node_vardec *>(root);
 		symbolTableEntry e;
-		for (auto v : var->vars) {
-			
-			Function *TheFunction = Builder->GetInsertBlock()->getParent();
-			parm_type tmp;
-			tmp.type = var->type;
-			tmp.arraydim = 0;
-			Type *t = gettype(tmp);
-			if (v.arraydim != 0) {
-				int size = 1;
-				for (int i = 0; i < v.arraydim; i++) {
-					size *= v.arraysize[i];
+		if (tablestack[tablestack.size() - 1].scopeid == "global") {
+			for (auto v : var->vars) {
+				parm_type tmp;
+				tmp.type = var->type;
+				tmp.arraydim = 0;
+				Type *t = gettype(tmp);
+				if (v.arraydim != 0) {
+					int size = 1;
+					for (int i = 0; i < v.arraydim; i++) {
+						size *= v.arraysize[i];
+					}
+					t = ArrayType::get(t, size);
 				}
-				Type *t2 = ArrayType::get(t, size);
-			}
-			AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, v.ident, t);
-			e.id = v.ident;
-			e.type = v;
-			e.type.type = var->type;
-			e.isfunc = false;
-			e.isproto = false;
-			e.mem = Alloca;
-			tablestack[tablestack.size() - 1].entrys.push_back(e);
+				TheModule->getOrInsertGlobal(v.ident, t);
+				GlobalVariable *gVar = TheModule->getNamedGlobal(v.ident);
+				gVar->setLinkage(GlobalValue::CommonLinkage);
+				gVar->setAlignment(4);
+				if (t == Type::getInt32Ty(*TheContext)) {
+					gVar->setInitializer(ConstantInt::get(*TheContext, APInt(32, 0)));
+				}
+				if (t == Type::getInt8Ty(*TheContext)) {
+					gVar->setInitializer(ConstantInt::get(*TheContext, APInt(8, 0)));
+				}
+				if (t == Type::getFloatTy(*TheContext)) {
+					gVar->setInitializer(ConstantFP::get(*TheContext, APFloat(0.f)));
+				}
+				else if (t->isArrayTy()) {
+					gVar->setInitializer(ConstantAggregateZero::get(t));
+				}
+				e.id = v.ident;
+				e.type = v;
+				e.type.type = var->type;
+				e.isfunc = false;
+				e.isproto = false;
+				e.mem = gVar;
+				tablestack[tablestack.size() - 1].entrys.push_back(e);
 
+			}
 		}
+		else {
+			for (auto v : var->vars) {
+
+				Function *TheFunction = Builder->GetInsertBlock()->getParent();
+				parm_type tmp;
+				tmp.type = var->type;
+				tmp.arraydim = 0;
+				Type *t = gettype(tmp);
+				Value * mem;
+				if (v.arraydim != 0) {
+					int size = 1;
+					for (int i = 0; i < v.arraydim; i++) {
+						size *= v.arraysize[i];
+					}
+					ArrayType *t2 = ArrayType::get(t, size);
+					mem = CreateEntryBlockAlloca(TheFunction, v.ident, t,size);
+
+				}
+				else {
+					mem = CreateEntryBlockAlloca(TheFunction, v.ident, t,1);
+
+				}
+				e.id = v.ident;
+				e.type = v;
+				e.type.type = var->type;
+				e.isfunc = false;
+				e.isproto = false;
+				e.mem = mem;
+				tablestack[tablestack.size() - 1].entrys.push_back(e);
+
+			}
+		}
+		
 	}
 
 	if (typeid(*root) == typeid(ast_node_unary)) {
@@ -458,20 +569,67 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		ast_node_lvalue *lv = dynamic_cast<ast_node_lvalue *>(u->body);
 		Value *ptr;
 		if (u->op == O_SELFPLUS || u->op == O_SELFMINUS) {
+
 			symbolTableEntry e;
 			if (findintable(lv->id, e, tablestack)) {
 				if (e.type.arraydim != 0) {
-					Value *index = codegenHelper(lv->arrayind[0]);
-					for (int i = 1; i < lv->arrayind.size(); i++) {
+					Value *index = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0, true));
+					for (int i = 0; i < lv->arrayind.size(); i++) {
 						Value *tmp = codegenHelper(lv->arrayind[i]);
-						index = Builder->CreateMul(index, tmp);
+						int temp = 1;
+						for (int j = i + 1; j < lv->arrayind.size(); j++) {
+							temp *= e.type.arraysize[j];
+						}
+						Value *dims = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, temp, true));
+						tmp = Builder->CreateMul(dims, tmp);
+						index = Builder->CreateAdd(index, tmp);
 					}
 					auto zero = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0, true));
-					Type *t = gettype(e.type);
-					ptr = llvm::GetElementPtrInst::Create(t, e.mem, { zero, index }, "", Builder->GetInsertBlock());
+					parm_type temp;
+					temp.arraydim = 0;
+					temp.isarray = false;
+					temp.type = e.type.type;
+					Type *t = gettype(temp);
+
+					Value *ptr;
+					if (e.mem->getType()->isPointerTy() && e.mem->getType()->getPointerElementType()->isPointerTy()) {
+						ptr = Builder->CreateLoad(e.mem);
+						ptr = llvm::GetElementPtrInst::Create(t, ptr, { index }, "", Builder->GetInsertBlock());
+					}
+					else {
+						ptr = llvm::GetElementPtrInst::Create(t, e.mem, { index }, "", Builder->GetInsertBlock());
+					}
+					Value *ltmp;
+					Value *rtmp;
+					rtmp = Builder->CreateLoad(ptr);
+					if (u->op == O_SELFPLUS) {
+						ltmp = Builder->CreateAdd(rtmp, ConstantInt::get(Type::getInt32Ty(*TheContext), APInt(32, 1, true)));
+						ltmp = Builder->CreateStore(ltmp, ptr);
+					}
+					if (u->op == O_SELFMINUS) {
+						ltmp = Builder->CreateAdd(rtmp, ConstantInt::get(Type::getInt32Ty(*TheContext), APInt(32, -1, true)));
+						ltmp = Builder->CreateStore(ltmp, ptr);
+					}
+					if(u->isright)
+						return rtmp;
+					else return ltmp;
 				}
-				else
-					ptr = e.mem;
+				else {
+					Value *ltmp;
+					Value *rtmp;
+					rtmp = V;
+					if (u->op == O_SELFPLUS) {
+						ltmp = Builder->CreateAdd(rtmp, ConstantInt::get(Type::getInt32Ty(*TheContext), APInt(32, 1, true)));
+						Builder->CreateStore(ltmp, e.mem);
+					}
+					if (u->op == O_SELFMINUS) {
+						ltmp = Builder->CreateAdd(rtmp, ConstantInt::get(Type::getInt32Ty(*TheContext), APInt(32, -1, true)));
+						Builder->CreateStore(ltmp, e.mem);
+					}
+					if (u->isright)
+						return rtmp;
+					else return ltmp;
+				}
 			}
 		}
 		switch (u->op) {
@@ -486,26 +644,6 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 				return Builder->CreateNot(V);
 			}
 			return Builder->CreateNot(V);
-			break;
-		case O_SELFMINUS:
-			if (V->getType() == Type::getFloatTy(*TheContext)) {
-				V = Builder->CreateFAdd(V,ConstantFP::get(*TheContext,APFloat(-1.f)));
-				V = Builder->CreateStore(V, ptr);
-			}
-			else {
-				V = Builder->CreateAdd(V, ConstantInt::get(*TheContext, APInt(32,-1)));
-				V = Builder->CreateStore(V, ptr);
-			}
-			break;
-		case O_SELFPLUS:
-			if (V->getType() == Type::getFloatTy(*TheContext)) {
-				V = Builder->CreateFAdd(V, ConstantFP::get(*TheContext, APFloat(1.f)));
-				V = Builder->CreateStore(V, ptr);
-			}
-			else {
-				V = Builder->CreateAdd(V, ConstantInt::get(*TheContext, APInt(32, 1)));
-				V = Builder->CreateStore(V, ptr);
-			}
 			break;
 		}
 	}
@@ -638,18 +776,130 @@ Value *CodeGen::codegenHelper(ast_node *root) {
 		symbolTableEntry e;
 		if (findintable(lv->id, e, tablestack)) {
 			if (e.type.arraydim != 0) {
-				Value *index = codegenHelper(lv->arrayind[0]);
-				for (int i = 1; i < lv->arrayind.size(); i++) {
+				Value *index = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0, true));
+				for (int i = 0; i < lv->arrayind.size(); i++) {
 					Value *tmp = codegenHelper(lv->arrayind[i]);
-					index = Builder->CreateMul(index, tmp);
+					int temp = 1;
+					for (int j = i + 1; j < lv->arrayind.size(); j++) {
+						temp *= e.type.arraysize[j];
+					}
+					Value *dims = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, temp, true));
+					tmp = Builder->CreateMul(dims, tmp);
+					index = Builder->CreateAdd(index, tmp);
 				}
 				auto zero = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0, true));
-				Type *t = gettype(e.type);
-				auto ptr = llvm::GetElementPtrInst::Create(t, e.mem, { zero, index }, "", Builder->GetInsertBlock());
-				return Builder->CreateStore(v, ptr);
+				parm_type temp;
+				temp.arraydim = 0;
+				temp.isarray = false;
+				temp.type = e.type.type;
+				Type *t = gettype(temp);
+
+				Value *ptr;
+				if (e.mem->getType()->isPointerTy() && e.mem->getType()->getPointerElementType()->isPointerTy()) {
+					ptr = Builder->CreateLoad(e.mem);
+					ptr = llvm::GetElementPtrInst::Create(t, ptr, { index }, "", Builder->GetInsertBlock());
+				}
+				else {
+					ptr = llvm::GetElementPtrInst::Create(t, e.mem, { index }, "", Builder->GetInsertBlock());
+				}
+				if (ptr->getType()->getPointerElementType() == Type::getFloatTy(*TheContext)) {
+					v = tofloat(v);
+				}
+				if (ptr->getType()->getPointerElementType() == Type::getInt32Ty(*TheContext)) {
+					v = toint(v);
+				}
+				if (ptr->getType()->getPointerElementType() == Type::getInt8Ty(*TheContext)) {
+					v = tochar(v);
+				}
+				Value *v1;
+				if (assg->op == operations::O_EQ)
+					return Builder->CreateStore(v, ptr);
+				else {
+					switch(assg->op) {
+						case O_PLUS:
+							v1 = Builder->CreateLoad(ptr);
+							if (v->getType() == Type::getFloatTy(*TheContext))
+								v1 = Builder->CreateFAdd(v, v1);
+							else
+								v1 = Builder->CreateAdd(v, v1);
+							Builder->CreateStore(v1, ptr);
+							break;
+						case O_MINUS:
+							v1 = Builder->CreateLoad(ptr);
+							if (v->getType() == Type::getFloatTy(*TheContext))
+								v1 = Builder->CreateFAdd(v, Builder->CreateFNeg(v1));
+							else
+								v1 = Builder->CreateAdd(v, Builder->CreateNeg(v1));
+							Builder->CreateStore(v1, ptr);
+							break;
+						case O_MULTIPLY:
+							v1 = Builder->CreateLoad(ptr);
+							if (v->getType() == Type::getFloatTy(*TheContext))
+								v1 = Builder->CreateFMul(v, v1);
+							else
+								v1 = Builder->CreateMul(v, v1);
+							Builder->CreateStore(v1, ptr);
+							break;
+						case O_DIVIDE:
+							v1 = Builder->CreateLoad(ptr);
+							if (v->getType() == Type::getFloatTy(*TheContext))
+								v1 = Builder->CreateFDiv(v, v1);
+							else
+								v1 = Builder->CreateSDiv(v, v1);
+							Builder->CreateStore(v1, ptr);
+							break;
+					}
+				}
 			}
 			else
-				return Builder->CreateStore(v,e.mem);
+				if (e.mem->getType()->getPointerElementType() == Type::getFloatTy(*TheContext)) {
+					v = tofloat(v);
+				}
+				if (e.mem->getType()->getPointerElementType() == Type::getInt32Ty(*TheContext)) {
+					v = toint(v);
+				}
+				if (e.mem->getType()->getPointerElementType() == Type::getInt8Ty(*TheContext)) {
+					v = tochar(v);
+				}
+				if (assg->op == operations::O_EQ)
+					return Builder->CreateStore(v, e.mem);
+				else {
+					Value *v1;
+					switch (assg->op) {
+					case O_PLUS:
+						v1 = Builder->CreateLoad(e.mem);
+						if (v->getType() == Type::getFloatTy(*TheContext))
+							v1 = Builder->CreateFAdd(v, v1);
+						else
+							v1 = Builder->CreateAdd(v, v1);
+						Builder->CreateStore(v1, e.mem);
+						break;
+					case O_MINUS:
+						v1 = Builder->CreateLoad(e.mem);
+						if (v->getType() == Type::getFloatTy(*TheContext))
+							v1 = Builder->CreateFAdd(v, Builder->CreateFNeg(v1));
+						else
+							v1 = Builder->CreateAdd(v, Builder->CreateNeg(v1));
+						Builder->CreateStore(v1, e.mem);
+						break;
+					case O_MULTIPLY:
+						v1 = Builder->CreateLoad(e.mem);
+						if (v->getType() == Type::getFloatTy(*TheContext))
+							v1 = Builder->CreateFMul(v, v1);
+						else
+							v1 = Builder->CreateMul(v, v1);
+						Builder->CreateStore(v1, e.mem);
+						break;
+					case O_DIVIDE:
+						v1 = Builder->CreateLoad(e.mem);
+						if (v->getType() == Type::getFloatTy(*TheContext))
+							v1 = Builder->CreateFDiv(v, v1);
+						else
+							v1 = Builder->CreateSDiv(v, v1);
+						Builder->CreateStore(v1, e.mem);
+						break;
+					}
+				}
 		}
 	}
 

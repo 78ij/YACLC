@@ -80,6 +80,7 @@ public:
 class ast_node_lvalue :public ast_node{
 public:
 	string id;
+	bool iscallfunc;
 	vector<ast_node *> arrayind;
 	void print(int l) override ;
 };

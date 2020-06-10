@@ -24,6 +24,7 @@ void printhelp(){
     cout << "-h, Print this help message.\n";
     cout << "-l, Print lexer output (a stream of tokens).\n";
     cout << "-a, Print parser output (an abstract syntax tree).\n";
+	cout << "-s, Print symbol table in the process of semantic analysis.\n";
 }
 int main(int argc,char **argv){ 
     if(argc == 1){
@@ -31,9 +32,10 @@ int main(int argc,char **argv){
         return 0;
     } 
     char ch;
-    bool lexer;
-    bool ast;
-    while((ch = getopt(argc,argv,"hla")) != -1){
+    bool lexer = false;
+    bool ast = false;;
+	bool symt = false;
+    while((ch = getopt(argc,argv,"hlas")) != -1){
         switch(ch){
             case 'h':
                 printhelp();
@@ -44,6 +46,9 @@ int main(int argc,char **argv){
             case 'a':
                 ast = true;
                 break;
+			case 's':
+				symt = true;
+				break;
         }
     }
     if(optind >= argc){
@@ -78,7 +83,7 @@ int main(int argc,char **argv){
         root->print(0);
         cout << "----------------------------End AST-----------------------------------------\n";
     }
-    Semantic s(root,true);
+    Semantic s(root,symt);
     s.analysis();
 	CodeGen c(root);
 	c.genIR();

@@ -28,6 +28,20 @@ struct yt {
   //struct symbol_node * symbol;
 };
 #define YYSTYPE yt
+
+void swap(int list[],int n){
+    if(n == 0 || n == 1) return;
+    else{
+        int l = 0,r = n-1;
+        while(l < r){
+            int tmp = list[l];
+             list[l] = list[r];
+             list[r] = tmp;
+             l++;
+             r--;
+        }
+    }
+}
 %}
  
 
@@ -40,7 +54,7 @@ struct yt {
 %token WHILE FOR BREAK CONTINUE RETURN IF INT FLOAT CHAR VOID LB RB LP RP LA RA COMMA SEMI ERROR
 %type<ast> prog dcl func stmt assg expr_left expr funcdcl vardcl
 %type<type> type
-%type<para> multidim arraylist;
+%type<para>  arraylist;
 %type<parms> decllist parm_types parmlist
 %type<set> funcbody exprlist stmtlist multidim_ind
 %nonassoc NO_ELSE
@@ -48,16 +62,19 @@ struct yt {
 
 %left COMMA
 
-%left AND OR
-
 %right ASSG
 %right PLUSASSG
 %right MINUSASSG
 %right MULTIPLYASSG
 %right DIVIDEASSG
+
+%left AND OR
+
+
  
-%left GT GE LT LE 
+
 %left EQ NEQ
+%left GT GE LT LE 
 %left PLUS MINUS
 %left MULTIPLY DIVIDE
 
@@ -92,6 +109,7 @@ vardcl:      type ID arraylist decllist {
                 ast_node_vardec *tmp = new ast_node_vardec();
                 $3.ident = $2; 
                 $3.isarray = $3.arraydim == 0? false : true;
+                swap($3.arraysize,$3.arraydim);
                 $4.insert($4.begin(),$3);
                 tmp->type = $1;
                 tmp->vars = $4;
@@ -101,15 +119,18 @@ decllist:     COMMA ID arraylist decllist
               {
                 $3.ident = $2; 
                 $3.isarray = $3.arraydim == 0? false : true;
+                swap($3.arraysize,$3.arraydim);
                 $4.insert($4.begin(),$3);
+                
                 $$ = $4;
               }
             | {$$ = vector<parm_type>();};
-parmlist:     COMMA type ID multidim parmlist 
+parmlist:     COMMA type ID arraylist parmlist 
             {
               $4.isarray = $4.arraydim == 0? false : true;
               $4.ident = $3;
               $4.type = $2;
+			   swap($4.arraysize,$4.arraydim);
               $5.insert($5.begin(),$4);
               $$ = $5;
             }
@@ -119,14 +140,13 @@ arraylist:   LB INTCON RB arraylist {$$ = $4; $$.arraysize[$$.arraydim] = $2; ($
 type:	       CHAR {$$ = T_CHAR;}
  	          |	INT {$$ = T_INT;}
             | FLOAT {$$=T_FLOAT;}
-multidim:    LB RB multidim {$$ = $3; ($$.arraydim)++;}
-            | {$$ = parm_type();$$.arraydim=0;};
 parm_types: 	VOID {$$ = vector<parm_type>();}
- 	          |	type ID multidim parmlist
+ 	          |	type ID arraylist parmlist
             {
               $3.ident = $2;
               $3.isarray = $3.arraydim == 0? false : true;
               $3.type = $1;
+			   swap($3.arraysize,$3.arraydim);
               $4.insert($4.begin(),$3);
               $$ = $4;
             };
@@ -162,7 +182,7 @@ func:	      type ID LP parm_types RP LA funcbody RA
 exprlist:     COMMA expr exprlist{$3.insert($3.begin(),$2); $$ = $3;}
             | {$$ = vector<ast_node*>();};
 stmtlist:    stmt stmtlist {$2.insert($2.begin(),$1); $$ = $2;}
-            | vardcl stmtlist{$2.insert($2.begin(),$1);$$ = $2;}
+            | vardcl SEMI stmtlist{$3.insert($3.begin(),$1);$$ = $3;}
             |{$$ = vector<ast_node*>();};
 stmt:      	IF LP expr RP stmt ELSE stmt
             {
@@ -281,9 +301,9 @@ stmt:      	IF LP expr RP stmt ELSE stmt
             }
             |error SEMI{yyclearin;yyerrok;}
             ;
-multidim_ind: LB expr RB multidim_ind {$4.push_back($2); $$ = $4;}
+multidim_ind: LB expr RB multidim_ind {$4.insert($4.begin(),$2); $$ = $4;}
             | {$$ = vector<ast_node *>();};
-assg:	      expr_left ASSG expr 
+assg:	      expr ASSG expr 
             {
               ast_node_assg *tmp = new ast_node_assg();
               tmp->left = $1;
@@ -291,7 +311,7 @@ assg:	      expr_left ASSG expr
               tmp->op = O_EQ;
               $$ = tmp;
             }
-            | expr_left PLUSASSG expr
+            | expr PLUSASSG expr
             {
               ast_node_assg *tmp = new ast_node_assg();
               tmp->left = $1;
@@ -299,7 +319,7 @@ assg:	      expr_left ASSG expr
               tmp->op = O_PLUS;
               $$ = tmp;
             }
-            | expr_left MINUSASSG expr
+            | expr MINUSASSG expr
             {
               ast_node_assg *tmp = new ast_node_assg();
               tmp->left = $1;
@@ -307,7 +327,7 @@ assg:	      expr_left ASSG expr
               tmp->op = O_MINUS;
               $$ = tmp;
             }
-            | expr_left DIVIDEASSG expr
+            | expr DIVIDEASSG expr
             {
               ast_node_assg *tmp = new ast_node_assg();
               tmp->left = $1;
@@ -315,7 +335,7 @@ assg:	      expr_left ASSG expr
               tmp->op = O_DIVIDE;
               $$ = tmp;
             }
-            | expr_left MULTIPLYASSG expr
+            | expr MULTIPLYASSG expr
             {
               ast_node_assg *tmp = new ast_node_assg();
               tmp->left = $1;
