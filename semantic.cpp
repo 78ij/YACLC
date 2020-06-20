@@ -127,19 +127,29 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
             symbolTableEntry e;
             if(findintable(lv->id,e,tablestack)){
                 //check if type are coherent
+				parm_type t;
+				t.ident = e.type.ident;
+				t.type = e.type.type;
                 if(e.isfunc){
                    error("Function name " + lv->id + " used as left value.");
                 }
-				if (e.type.arraydim != lv->arrayind.size())
-					if (lv->iscallfunc && lv->arrayind.size() == 0);
+				if (e.type.arraydim != lv->arrayind.size()) {
+					if (lv->iscallfunc && lv->arrayind.size() == 0) {
+						t.arraydim = e.type.arraydim;
+						for (int i = 0; i < 10; i++) t.arraysize[i] = e.type.arraysize[i];
+					}
 					else
 						error("array dimension of " + lv->id + " doesn't match.");
+				}
+				else {
+					t.arraydim = 0;
+				}
 				for (auto i : lv->arrayind) {
 					parm_type t = analysisHelper(i, level + 1);
 					if (t.type != T_INT)
 						error("Array " + lv->id + "'s index is not int value.");
 				}
-                return e.type;
+				return t;
 			}
 			else {
 				error("Variable name " + lv->id + " not defined.");
@@ -339,7 +349,7 @@ parm_type Semantic::analysisHelper(ast_node *root,int level){
         ast_node_unary *u = dynamic_cast<ast_node_unary *>(root);
         parm_type t = analysisHelper(u->body,level+1);
 		
-		if(typeid(u->body) != typeid(ast_node_lvalue) && (u->op == O_UNOT || u->op ==O_UMINUS))
+		if(typeid(*(u->body)) != typeid(ast_node_lvalue) && (u->op == O_UNOT || u->op ==O_UMINUS))
 			error("Right value used as left value.");
 		parm_type t2;
         t2.type = T_INT;

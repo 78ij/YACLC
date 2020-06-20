@@ -54,7 +54,7 @@ void swap(int list[],int n){
 %token WHILE FOR BREAK CONTINUE RETURN IF INT FLOAT CHAR VOID LB RB LP RP LA RA COMMA SEMI ERROR
 %type<ast> prog dcl func stmt assg expr_left expr funcdcl vardcl
 %type<type> type
-%type<para>  arraylist;
+%type<para>  arraylist
 %type<parms> decllist parm_types parmlist
 %type<set> funcbody exprlist stmtlist multidim_ind
 %nonassoc NO_ELSE
